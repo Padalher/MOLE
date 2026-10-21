@@ -1,0 +1,12 @@
+[package]
+name = "mole"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+mole-core = { path = "../mole-core" }
+x11rb = { version = "0.14", features = ["render"] }
