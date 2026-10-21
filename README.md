@@ -19,6 +19,14 @@ pip install mole-viewer        # or: pip install --user mole-viewer · pipx inst
 mole                           # the package is called mole-viewer; the command is mole
 ```
 
+If `pip` is not available (common on clusters, where you cannot install system packages), use a virtual environment, which brings its own pip:
+```bash
+python3 -m venv ~/.local/mole-viewer
+~/.local/mole-viewer/bin/pip install mole-viewer
+mkdir -p ~/.local/bin && ln -sf ~/.local/mole-viewer/bin/mole ~/.local/bin/mole
+```
+(`~/.local/bin` must be on your `PATH`; otherwise add `export PATH="$HOME/.local/bin:$PATH"` to `~/.bashrc`.)
+
 **Prebuilt binary** (Linux x86_64, static; works with any glibc):
 ```bash
 curl -LO https://github.com/Padalher/MOLE/releases/latest/download/mole-x86_64-linux
