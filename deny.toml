@@ -1,0 +1,11 @@
+# cargo-deny configuration: permissive licenses only.
+
+[licenses]
+allow = ["MIT", "Apache-2.0"]
+
+[bans]
+multiple-versions = "warn"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

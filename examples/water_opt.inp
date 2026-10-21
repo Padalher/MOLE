@@ -1,0 +1,7 @@
+# MOLE example: geometry optimization of a distorted water molecule.
+! B3LYP D3BJ def2-SVP Opt
+* xyz 0 1
+O    0.000000    0.000000    0.000000
+H    0.000000    0.000000    1.250000
+H    1.150000    0.000000   -0.550000
+*

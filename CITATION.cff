@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use MOLE in published work, please cite it as below."
+type: software
+title: "MOLE: a lightweight viewer for ensembles of molecular structures with an interactive E vs n plot"
+version: 0.2.0
+date-released: 2026-10-21
+license: MIT
+repository-code: "https://github.com/Padalher/MOLE"
+keywords:
+  - computational chemistry
+  - molecular visualization
+  - XYZ
+  - ORCA
+  - Gaussian
+  - X11
+authors:
+  - given-names: Pablo D.
+    family-names: Alvarez-Hernandez
+    affiliation: "Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, Mexico"
+  - given-names: Filiberto
+    family-names: Ortiz Chi
+    affiliation: "Cinvestav Unidad Mérida, TheoChem Mérida, Mexico"

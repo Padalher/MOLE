@@ -1,0 +1,16 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+publish = false
+authors = ["Pablo D. Alvarez-Hernandez", "Filiberto Ortiz Chi"]
+license = "MIT"
+repository = "https://github.com/Padalher/MOLE"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
