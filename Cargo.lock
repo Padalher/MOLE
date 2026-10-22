@@ -42,7 +42,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
 name = "mole"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "mole-core",
  "x11rb",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "mole-core"
-version = "0.2.0"
+version = "0.2.1"
 
 [[package]]
 name = "rustix"

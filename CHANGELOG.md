@@ -1,6 +1,10 @@
 # Changelog
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [0.2.1] — 2026-10-22
+### Fixed
+- macOS (XQuartz): `mole` could not open the window ("cannot connect to the X display: No such file or directory"). The `DISPLAY` path that XQuartz sets (`/private/tmp/com.apple.launchd.…/org.xquartz:0`) was ignored by x11rb 0.14, which tried `/tmp/.X11-unix/X0` instead; MOLE now connects to that path.
+
 ## [0.2.0] — 2026-10-21
 First public release.
 

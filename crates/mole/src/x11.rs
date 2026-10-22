@@ -1038,9 +1038,35 @@ pub fn run(loaded: Loaded, title: &str, options: Options) -> Result<(), String> 
     run_inner(loaded, title, options).map_err(|e| e.to_string())
 }
 
+/// Conecta con el servidor X de `$DISPLAY`. x11rb 0.14 ignora la ruta de un `DISPLAY` de tipo
+/// launchd (XQuartz en macOS: `/private/tmp/com.apple.launchd.…/org.xquartz:0`) y prueba
+/// `/tmp/.X11-unix/X0`, que no existe hasta que XQuartz arranca. Aquí se conecta a esa ruta.
+// ponytail: quitar al pasar a una versión de x11rb con la corrección (ya está en su rama master).
+fn connect() -> Result<(RustConnection, usize), Box<dyn std::error::Error>> {
+    #[cfg(unix)]
+    if let Some(path) = std::env::var("DISPLAY")
+        .ok()
+        .filter(|d| d.starts_with('/') && std::path::Path::new(d).exists())
+    {
+        use x11rb::reexports::x11rb_protocol::xauth::get_auth;
+        use x11rb::rust_connection::DefaultStream;
+        let stream = std::os::unix::net::UnixStream::connect(path)?;
+        let (stream, (family, address)) = DefaultStream::from_unix_stream(stream)?;
+        let (name, data) = get_auth(family, &address, 0)
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        return Ok((
+            RustConnection::connect_to_stream_with_auth_info(stream, 0, name, data)?,
+            0,
+        ));
+    }
+    Ok(x11rb::connect(None)?)
+}
+
 fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
     let (conn, screen_num) =
-        x11rb::connect(None).map_err(|e| format!("cannot connect to the X display: {e}"))?;
+        connect().map_err(|e| format!("cannot connect to the X display: {e}"))?;
     let screen = conn.setup().roots[screen_num].clone();
     let visual = screen
         .allowed_depths
