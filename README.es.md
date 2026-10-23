@@ -96,7 +96,7 @@ Si usas MOLE en un trabajo publicado, por favor cítalo. Los datos están en [`C
 - Pablo D. Alvarez-Hernandez: Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, México.
 - Filiberto Ortiz Chi: Cinvestav Unidad Mérida, TheoChem Mérida, México.
 
-MOLE se desarrolló con la ayuda de [Claude Code](https://claude.com/claude-code) (Anthropic).
+MOLE fue diseñado, dirigido y validado por Pablo D. Alvarez-Hernandez. Se usaron asistentes de programación basados en IA para escribir y reestructurar partes del código, las pruebas automáticas y la documentación; cada cambio fue revisado y validado por el autor. Las energías y geometrías que muestra MOLE siempre se leen de los archivos de salida de los cálculos de química cuántica; nunca las genera un modelo de lenguaje.
 
 ## Licencia
 [MIT](LICENSE).
