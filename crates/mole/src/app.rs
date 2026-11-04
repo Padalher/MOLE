@@ -31,6 +31,187 @@ fn rotation(ax: f64, ay: f64) -> Mat3 {
     )
 }
 
+fn transpose(m: &Mat3) -> Mat3 {
+    [0, 1, 2].map(|i| [m[0][i], m[1][i], m[2][i]])
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+/// Valores y vectores propios (en columnas) de una matriz simétrica, por Jacobi cíclico.
+fn sym_eigen<const N: usize>(mut a: [[f64; N]; N]) -> ([f64; N], [[f64; N]; N]) {
+    let mut v: [[f64; N]; N] = std::array::from_fn(|i| std::array::from_fn(|j| f64::from(i == j)));
+    for _ in 0..60 {
+        let off: f64 = (0..N)
+            .flat_map(|i| (i + 1..N).map(move |j| (i, j)))
+            .map(|(i, j)| a[i][j] * a[i][j])
+            .sum();
+        if off < 1e-30 {
+            break;
+        }
+        for p in 0..N {
+            for q in p + 1..N {
+                if a[p][q] == 0.0 {
+                    continue;
+                }
+                let theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q]);
+                let t = theta.signum() / (theta.abs() + theta.hypot(1.0));
+                let c = 1.0 / t.hypot(1.0);
+                let s = t * c;
+                for row in a.iter_mut() {
+                    let (kp, kq) = (row[p], row[q]);
+                    (row[p], row[q]) = (c * kp - s * kq, s * kp + c * kq);
+                }
+                let (rp, rq) = (a[p], a[q]);
+                a[p] = std::array::from_fn(|k| c * rp[k] - s * rq[k]);
+                a[q] = std::array::from_fn(|k| s * rp[k] + c * rq[k]);
+                for row in v.iter_mut() {
+                    let (kp, kq) = (row[p], row[q]);
+                    (row[p], row[q]) = (c * kp - s * kq, s * kp + c * kq);
+                }
+            }
+        }
+    }
+    (std::array::from_fn(|i| a[i][i]), v)
+}
+
+/// Posiciones respecto al centroide (el mismo centro que usa la vista 3D).
+fn centered(s: &Structure) -> Vec<[f64; 3]> {
+    let n = s.atoms.len().max(1) as f64;
+    let c = [0, 1, 2].map(|k| s.atoms.iter().map(|a| a.pos[k]).sum::<f64>() / n);
+    s.atoms
+        .iter()
+        .map(|a| [0, 1, 2].map(|k| a.pos[k] - c[k]))
+        .collect()
+}
+
+/// Rotación que superpone `p` sobre `q` átomo por átomo con el mínimo RMSD (método de Horn, con
+/// cuaterniones: siempre una rotación propia).
+fn superpose(p: &[[f64; 3]], q: &[[f64; 3]]) -> Mat3 {
+    let mut s = [[0.0; 3]; 3];
+    for (a, b) in p.iter().zip(q) {
+        for i in 0..3 {
+            for j in 0..3 {
+                s[i][j] += a[i] * b[j];
+            }
+        }
+    }
+    let [[xx, xy, xz], [yx, yy, yz], [zx, zy, zz]] = s;
+    let (vals, vecs) = sym_eigen([
+        [xx + yy + zz, yz - zy, zx - xz, xy - yx],
+        [yz - zy, xx - yy - zz, xy + yx, zx + xz],
+        [zx - xz, xy + yx, -xx + yy - zz, yz + zy],
+        [xy - yx, zx + xz, yz + zy, -xx - yy + zz],
+    ]);
+    let k = (0..4)
+        .max_by(|&a, &b| vals[a].total_cmp(&vals[b]))
+        .unwrap_or(0);
+    let [w, x, y, z] = [0, 1, 2, 3].map(|i| vecs[i][k]);
+    [
+        [
+            w * w + x * x - y * y - z * z,
+            2.0 * (x * y - w * z),
+            2.0 * (x * z + w * y),
+        ],
+        [
+            2.0 * (x * y + w * z),
+            w * w - x * x + y * y - z * z,
+            2.0 * (y * z - w * x),
+        ],
+        [
+            2.0 * (x * z - w * y),
+            2.0 * (y * z + w * x),
+            w * w - x * x - y * y + z * z,
+        ],
+    ]
+}
+
+/// Ejes principales de la distribución de átomos (pesados por Z), en filas y de mayor a menor
+/// dispersión: `apply(&e, r)` da r en ese marco. El signo de cada eje lo fija el tercer momento y
+/// la base es dextrógira.
+// ponytail: en cúmulos casi simétricos (ejes degenerados o tercer momento ~0) la orientación puede
+// saltar entre isómeros parecidos; superponer por permutación de átomos lo resolvería.
+fn principal_axes(s: &Structure) -> Mat3 {
+    let p = centered(s);
+    let w: Vec<f64> = s.atoms.iter().map(|a| f64::from(a.z)).collect();
+    let mut g = [[0.0; 3]; 3];
+    for (r, m) in p.iter().zip(&w) {
+        for i in 0..3 {
+            for j in 0..3 {
+                g[i][j] += m * r[i] * r[j];
+            }
+        }
+    }
+    let (vals, vecs) = sym_eigen(g);
+    let mut order = [0, 1, 2];
+    order.sort_by(|&a, &b| vals[b].total_cmp(&vals[a]));
+    let mut e: Mat3 = order.map(|k| [0, 1, 2].map(|i| vecs[i][k]));
+    for ax in e.iter_mut().take(2) {
+        let skew: f64 = p
+            .iter()
+            .zip(&w)
+            .map(|(r, m)| m * dot(*ax, *r).powi(3))
+            .sum();
+        if skew < 0.0 {
+            *ax = ax.map(|v| -v);
+        }
+    }
+    e[2] = cross(e[0], e[1]);
+    e
+}
+
+/// Rotación que lleva `s` a la orientación de la referencia `r`. Candidatas: la superposición
+/// átomo por átomo (si tienen los mismos elementos en el mismo orden) y las cuatro orientaciones
+/// por ejes principales; gana la que deja cada átomo más cerca de uno del mismo elemento de la
+/// referencia. Así una trayectoria se superpone exacta y un isómero, cuyos índices de átomo no se
+/// corresponden, se orienta como el que más se le parece.
+// ponytail: comparar con cada átomo de la referencia es O(n²) por candidata; con miles de
+// estructuras de cientos de átomos, usar una rejilla de vecinos.
+fn orientation_to(s: &Structure, r: &Structure) -> Mat3 {
+    let (p, q) = (centered(s), centered(r));
+    let (es, er) = (principal_axes(s), principal_axes(r));
+    let mut candidates: Vec<Mat3> = [(1.0, 1.0), (-1.0, -1.0), (1.0, -1.0), (-1.0, 1.0)]
+        .iter()
+        .map(|&(a, b)| {
+            let (e0, e1) = (es[0].map(|v| v * a), es[1].map(|v| v * b));
+            mul(&transpose(&er), &[e0, e1, cross(e0, e1)])
+        })
+        .collect();
+    if s.atoms.len() == r.atoms.len() && s.atoms.iter().zip(&r.atoms).all(|(a, b)| a.z == b.z) {
+        candidates.push(superpose(&p, &q));
+    }
+    // Distancia² de cada átomo al más cercano de la referencia (otro elemento: penalizado).
+    let mismatch = |m: &Mat3| -> f64 {
+        p.iter()
+            .zip(&s.atoms)
+            .map(|(&x, a)| {
+                let y = apply(m, x);
+                q.iter()
+                    .zip(&r.atoms)
+                    .map(|(&t, b)| {
+                        let d = [0, 1, 2].map(|k| y[k] - t[k]);
+                        dot(d, d) + if a.z == b.z { 0.0 } else { 100.0 }
+                    })
+                    .fold(f64::INFINITY, f64::min)
+            })
+            .sum()
+    };
+    candidates
+        .into_iter()
+        .map(|m| (mismatch(&m), m))
+        .min_by(|a, b| a.0.total_cmp(&b.0))
+        .map_or(IDENTITY, |(_, m)| m)
+}
+
 /// Navegación y reproducción.
 pub struct Player {
     pub len: usize,
@@ -154,6 +335,7 @@ pub enum Button {
     MetalMetal,
     Smooth,
     RelativeEnergy,
+    FixOrientation,
 }
 
 /// Elemento de la barra de controles: botón o texto (con su ancho fijo en caracteres).
@@ -193,6 +375,7 @@ pub fn tolerance_text(t: f64) -> String {
 /// Etiqueta de la casilla de enlaces metal–metal.
 pub const METAL_METAL_LABEL: &str = "M-M bonds";
 pub const RELATIVE_ENERGY_LABEL: &str = "E - Emin";
+pub const FIX_ORIENTATION_LABEL: &str = "Fix orientation";
 
 /// Nombre de un botón de reproducción, junto a su icono.
 pub fn playback_label(b: Button, playing: bool) -> Option<&'static str> {
@@ -257,10 +440,10 @@ impl Layout {
         let mut y = panel.y + pad;
         for b in [
             Button::First,
-            Button::Prev,
-            Button::Play,
-            Button::Next,
             Button::Last,
+            Button::Play,
+            Button::Prev,
+            Button::Next,
         ] {
             put(BarItem::Button(b), x0, x1 - x0, y);
             y += bh + gap;
@@ -276,7 +459,12 @@ impl Layout {
         put(BarItem::Button(Button::LessTolerance), x0, bh, y);
         put(BarItem::Tolerance, x0 + bh + gap, value_w, y);
         put(BarItem::Button(Button::MoreTolerance), x1 - bh, bh, y);
-        for b in [Button::MetalMetal, Button::Smooth, Button::RelativeEnergy] {
+        for b in [
+            Button::FixOrientation,
+            Button::MetalMetal,
+            Button::Smooth,
+            Button::RelativeEnergy,
+        ] {
             y += bh + 4;
             put(BarItem::Button(b), x0, x1 - x0, y);
         }
@@ -571,6 +759,9 @@ pub struct App {
     pub metal_metal: bool,
     /// Eje E relativo al mínimo (E − Emin, en las unidades del archivo) en lugar de absoluto.
     pub relative_energy: bool,
+    /// Orientación fija: rotación de cada estructura hacia la de referencia (la que se veía al
+    /// pulsar "Fix orientation"), para que todas se vean igual orientadas.
+    pub fixed_orientation: Option<Vec<Mat3>>,
     /// Dibujo suavizado (XRender) en lugar de primitivas X11 básicas.
     pub smooth: bool,
     pub layout: Layout,
@@ -624,6 +815,7 @@ impl App {
             bond_tolerance: DEFAULT_BOND_TOLERANCE,
             metal_metal: true,
             relative_energy: true,
+            fixed_orientation: None,
             smooth: false,
             layout,
             hover: Hover::None,
@@ -694,10 +886,14 @@ impl App {
             f64::from(v.x) + f64::from(v.w) / 2.0 + self.pan.0,
             f64::from(v.y) + f64::from(v.h) / 2.0 + self.pan.1,
         );
+        let m = match &self.fixed_orientation {
+            Some(fixed) => mul(&self.rotation, &fixed[self.player.current]),
+            None => self.rotation,
+        };
         let pts = atoms
             .iter()
             .map(|a| {
-                let p = apply(&self.rotation, [0, 1, 2].map(|k| a.pos[k] - c[k]));
+                let p = apply(&m, [0, 1, 2].map(|k| a.pos[k] - c[k]));
                 [ox + p[0] * scale, oy - p[1] * scale, p[2]]
             })
             .collect();
@@ -820,6 +1016,22 @@ impl App {
             Button::MetalMetal => self.metal_metal = !self.metal_metal,
             Button::Smooth => self.smooth = !self.smooth,
             Button::RelativeEnergy => self.relative_energy = !self.relative_energy,
+            Button::FixOrientation => {
+                self.fixed_orientation = match self.fixed_orientation {
+                    Some(_) => None,
+                    None => {
+                        let (all, cur) = (&self.loaded.structures, self.player.current);
+                        Some(
+                            (0..all.len())
+                                .map(|i| match i == cur {
+                                    true => IDENTITY,
+                                    false => orientation_to(&all[i], &all[cur]),
+                                })
+                                .collect(),
+                        )
+                    }
+                }
+            }
         }
     }
 
@@ -1190,6 +1402,89 @@ mod tests {
         assert_eq!(a.layout.plot.h, MIN_PANE_H, "se conserva al redimensionar");
         // El borde no se confunde con la gráfica: arrastrarlo no cambia de estructura.
         assert_eq!(a.player.current, 0);
+    }
+
+    fn mol(atoms: &[(u8, [f64; 3])]) -> Structure {
+        Structure {
+            atoms: atoms.iter().map(|&(z, pos)| Atom { z, pos }).collect(),
+            ..s(None)
+        }
+    }
+
+    /// Molécula sin simetría; `turn` la gira y la desplaza.
+    const ASYM: [(u8, [f64; 3]); 5] = [
+        (6, [0.0, 0.0, 0.0]),
+        (8, [1.2, 0.1, 0.0]),
+        (1, [-0.6, 0.9, 0.2]),
+        (7, [-0.4, -1.0, 0.5]),
+        (17, [0.3, 0.2, -1.7]),
+    ];
+
+    fn turn(atoms: &[(u8, [f64; 3])]) -> Vec<(u8, [f64; 3])> {
+        let r = mul(&rotation(0.7, -1.2), &rotation(2.1, 0.4));
+        atoms
+            .iter()
+            .map(|&(z, p)| (z, apply(&r, p).map(|v| v + 3.0)))
+            .collect()
+    }
+
+    fn close(a: [f64; 3], b: [f64; 3]) -> bool {
+        (0..3).all(|k| (a[k] - b[k]).abs() < 1e-6)
+    }
+
+    /// Mismos átomos en el mismo orden: "Fix orientation" superpone cada estructura sobre la de
+    /// referencia, así que una copia girada se dibuja exactamente igual que la referencia.
+    #[test]
+    fn fixed_orientation_superposes_same_atoms() {
+        let (a, b) = (mol(&ASYM), mol(&turn(&ASYM)));
+        let m = orientation_to(&b, &a);
+        let rotated: Vec<_> = centered(&b).iter().map(|&p| apply(&m, p)).collect();
+        assert!(rotated.iter().zip(centered(&a)).all(|(&p, q)| close(p, q)));
+        let det = dot(m[0], cross(m[1], m[2]));
+        assert!((det - 1.0).abs() < 1e-9, "rotación propia, sin reflejar");
+
+        let mut app = App::new(
+            Loaded {
+                structures: vec![a, b],
+                ..Default::default()
+            },
+            Layout::new(1200, 800, 9, 15),
+        );
+        app.press(Button::FixOrientation, 0.0);
+        let reference = app.projection().0;
+        app.player.go(1);
+        assert!(
+            app.projection()
+                .0
+                .iter()
+                .zip(&reference)
+                .all(|(&p, &q)| close(p, q))
+        );
+        app.press(Button::FixOrientation, 0.0);
+        assert!(
+            app.fixed_orientation.is_none(),
+            "otra pulsación vuelve a las del archivo"
+        );
+    }
+
+    /// Isómero con los átomos en otro orden: se alinean los ejes principales y quedan los mismos
+    /// átomos en las mismas posiciones, aunque con otro índice.
+    #[test]
+    fn fixed_orientation_aligns_isomers_by_principal_axes() {
+        let mut shuffled = turn(&ASYM);
+        shuffled.rotate_left(2);
+        let (a, b) = (mol(&ASYM), mol(&shuffled));
+        let m = orientation_to(&b, &a);
+        let target = centered(&a);
+        for (atom, p) in b.atoms.iter().zip(centered(&b)) {
+            let p = apply(&m, p);
+            let found = a
+                .atoms
+                .iter()
+                .zip(&target)
+                .any(|(t, &q)| t.z == atom.z && close(p, q));
+            assert!(found, "Z = {} en {p:?} no coincide", atom.z);
+        }
     }
 
     #[test]

@@ -3,8 +3,9 @@
 //! gráfica se dibuja una vez en un pixmap del servidor y se copia en cada fotograma.
 
 use crate::app::{
-    App, BarItem, Button, Hover, Input, Key, Layout, METAL_METAL_LABEL, RELATIVE_ENERGY_LABEL,
-    Rect, Shape3d, nice_ticks, playback_label, speed_text, tick_text, tolerance_text,
+    App, BarItem, Button, FIX_ORIENTATION_LABEL, Hover, Input, Key, Layout, METAL_METAL_LABEL,
+    RELATIVE_ENERGY_LABEL, Rect, Shape3d, nice_ticks, playback_label, speed_text, tick_text,
+    tolerance_text,
 };
 use crate::cli::Options;
 use mole_core::{Loaded, elements};
@@ -849,6 +850,9 @@ impl Window<'_> {
             Button::MetalMetal => Some((app.metal_metal, METAL_METAL_LABEL)),
             Button::Smooth => Some((app.smooth, "Smooth")),
             Button::RelativeEnergy => Some((app.relative_energy, RELATIVE_ENERGY_LABEL)),
+            Button::FixOrientation => {
+                Some((app.fixed_orientation.is_some(), FIX_ORIENTATION_LABEL))
+            }
             _ => None,
         };
         let (cw, asc) = (self.font.char_w, self.font.ascent);
@@ -965,7 +969,11 @@ impl Window<'_> {
                     TEXT,
                 )?;
             }
-            Button::Loop | Button::MetalMetal | Button::Smooth | Button::RelativeEnergy => {}
+            Button::Loop
+            | Button::MetalMetal
+            | Button::Smooth
+            | Button::RelativeEnergy
+            | Button::FixOrientation => {}
         }
         Ok(())
     }

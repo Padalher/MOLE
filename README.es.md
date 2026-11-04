@@ -25,7 +25,7 @@ MOLE está pensado para búsquedas de confórmeros, corridas de optimización gl
 
 - **la estructura en 3D**: bolas y barras; se gira, se mueve y se hace zoom con el ratón;
 - **la gráfica de energía E vs n**: energías relativas (E − Emin) por defecto; al pasar el ratón sobre un punto se ven n, E y la etiqueta; clic o arrastrar recorre las estructuras;
-- **una columna de controles junto a la estructura**: primera, anterior, reproducir/pausa, siguiente, última, velocidad, repetición, tolerancia de enlace y enlaces metal–metal.
+- **una columna de controles junto a la estructura**: primera, última, reproducir/pausa, anterior, siguiente, velocidad, repetición, tolerancia de enlace, enlaces metal–metal y una orientación fija para todas las estructuras.
 
 MOLE está pensado para **correr en una máquina remota (un clúster HPC o una estación de trabajo) y verse por `ssh -Y`**. Dibuja con el protocolo X11 básico, así que por la red solo viajan órdenes de dibujo (unos KB por fotograma) y la ventana va fluida incluso con una conexión doméstica. Solo lee resultados; nunca ejecuta cálculos.
 
@@ -91,6 +91,7 @@ mole --help
 - **Ratón (vista 3D):** arrastrar gira · botón derecho mueve · rueda acerca · doble clic restablece.
 - **Ratón (gráfica):** al pasar sobre un punto se ven n, E y la etiqueta · clic o arrastrar recorre las estructuras · arrastrar su borde superior la hace más alta o más baja.
 - **Eje de energía:** relativo (E − Emin) por defecto; la casilla *E - Emin* lo cambia a energías absolutas.
+- **Fix orientation:** gira todas las estructuras a la orientación de la que está en pantalla (átomo por átomo en trayectorias y confórmeros, por ejes principales en isómeros), para recorrer un conjunto sin que la vista salte.
 
 La interfaz está en inglés.
 

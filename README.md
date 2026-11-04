@@ -25,7 +25,7 @@ MOLE is made for conformer searches, global optimization runs and geometry optim
 
 - **the 3D structure**: ball and stick; rotate, move and zoom with the mouse;
 - **the energy plot E vs n**: relative energies (E − Emin) by default; hover a point to see n, E and the label; click or drag to browse the structures;
-- **a column of controls next to the structure**: first, previous, play/pause, next, last, speed, loop, bond tolerance and metal–metal bonds.
+- **a column of controls next to the structure**: first, last, play/pause, previous, next, speed, loop, bond tolerance, metal–metal bonds and a fixed orientation for all the structures.
 
 MOLE is designed to run **on a remote machine (an HPC cluster or a workstation) and be viewed over `ssh -Y`**. It draws with the core X11 protocol, so only drawing commands travel over the network (a few KB per frame), and the window stays fluid even on a home connection. It only reads results; it never runs calculations.
 
@@ -91,6 +91,7 @@ mole --help
 - **Mouse (3D view):** drag to rotate · right button to move · wheel to zoom · double click to reset.
 - **Mouse (plot):** hover a point to see n, E and the label · click or drag to browse the structures · drag its top edge to make it taller or shorter.
 - **Energy axis:** relative (E − Emin) by default; the *E - Emin* checkbox switches to absolute energies.
+- **Fix orientation:** turns every structure to the orientation of the one on screen (atom by atom for trajectories and conformers, by principal axes for isomers), so an ensemble can be browsed without the view jumping.
 
 **Try it** with the example included in this repository: the geometry optimization of a distorted water molecule (ORCA 6.1.1, B3LYP-D3BJ/def2-SVP, input in [`examples/water_opt.inp`](https://github.com/Padalher/MOLE/blob/main/examples/water_opt.inp)):
 ```bash

@@ -3,13 +3,14 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [0.3.0] — 2026-11-04
 ### Changed
-- The controls are in a single column at the top right, next to the 3D view, one per row: the playback buttons are larger and labeled (First, Previous, Play/Pause, Next, Last), so the mouse travels less between the structure and the buttons. The 3D view and the E vs n plot share the rest of the window.
+- The controls are in a single column at the top right, next to the 3D view, one per row: the playback buttons are larger and labeled (First, Last, Play/Pause, Previous, Next), so the mouse travels less between the structure and the buttons. The 3D view and the E vs n plot share the rest of the window.
 - Metal–metal bonds are drawn by default, so pure metal clusters (Cu, Ag, Au…) show their bonds when opened; the *M-M bonds* checkbox turns them off.
 - Every element has its own color: elements without a MOLE-specific color use the Blue Obelisk Data Repository colors (MIT license).
 
 ### Added
 - MOLE icon (`assets/mole.svg`); the window sets it (`_NET_WM_ICON`), so docks and taskbars show it instead of a generic icon, also over `ssh -Y`.
 - Dragging with the left button on the E vs n plot browses the structures; the plot itself still does not move or zoom.
+- *Fix orientation* checkbox: the structure on screen becomes the reference, and every other structure is turned to the same orientation. Structures with the same atoms in the same order (trajectories, conformers) are superposed atom by atom; isomers are aligned by their principal axes, choosing the orientation that best matches the reference.
 - Dragging the top edge of the E vs n plot makes it taller or shorter; the 3D view takes the rest of the height, and the chosen height is kept when the window is resized.
 - The E axis shows relative energies, E − Emin, by default (in the units of the file, with the value of Emin above the plot), so large values such as `-3219847.95` no longer give long axis labels; the *E - Emin* checkbox switches the axis to the absolute energies as read. The header and the tooltip always show each energy as read.
 
