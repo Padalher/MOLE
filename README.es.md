@@ -1,12 +1,31 @@
-# MOLE
+<p align="center">
+  <img src="assets/mole.svg" alt="Logo de MOLE" width="112">
+</p>
 
-*[English version](README.md)*
+<h1 align="center">MOLE</h1>
 
-MOLE es un visor ligero de conjuntos de estructuras moleculares: búsquedas de confórmeros, corridas de optimización global y trayectorias de optimización de geometría. Se lanza desde la terminal y abre una ventana con:
+<p align="center">
+  <b>Visor ligero de conjuntos de estructuras moleculares, con gráfica de energía E vs n.</b><br>
+  Fluido por <code>ssh -Y</code> desde un clúster HPC · un único ejecutable · lee archivos XYZ, Gaussian y ORCA
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/mole-viewer/"><img src="https://img.shields.io/pypi/v/mole-viewer?label=PyPI" alt="PyPI"></a>
+  <a href="https://github.com/Padalher/MOLE/actions/workflows/ci.yml"><img src="https://github.com/Padalher/MOLE/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-blue" alt="Licencia MIT"></a>
+</p>
+
+<p align="center"><i><a href="README.md">English version</a></i></p>
+
+<p align="center">
+  <img src="assets/screenshot.png" alt="Ventana de MOLE: vista 3D de una molécula de agua, gráfica E vs n de su optimización de geometría y la columna de controles" width="820">
+</p>
+
+MOLE está pensado para búsquedas de confórmeros, corridas de optimización global y trayectorias de optimización de geometría. Se lanza desde la terminal y abre una ventana con:
 
 - **la estructura en 3D**: bolas y barras; se gira, se mueve y se hace zoom con el ratón;
-- **la gráfica de energía E vs n**: al pasar el ratón sobre un punto se ven n, E y la etiqueta; un clic muestra esa estructura;
-- **controles de reproducción**: primera, anterior, reproducir/pausa, siguiente, última, velocidad y repetición.
+- **la gráfica de energía E vs n**: energías relativas (E − Emin) por defecto; al pasar el ratón sobre un punto se ven n, E y la etiqueta; clic o arrastrar recorre las estructuras;
+- **una columna de controles junto a la estructura**: primera, anterior, reproducir/pausa, siguiente, última, velocidad, repetición, tolerancia de enlace y enlaces metal–metal.
 
 MOLE está pensado para **correr en una máquina remota (un clúster HPC o una estación de trabajo) y verse por `ssh -Y`**. Dibuja con el protocolo X11 básico, así que por la red solo viajan órdenes de dibujo (unos KB por fotograma) y la ventana va fluida incluso con una conexión doméstica. Solo lee resultados; nunca ejecuta cálculos.
 
@@ -70,6 +89,8 @@ mole --help
 
 - **Teclado:** ← → anterior/siguiente · espacio reproducir/pausa · Inicio/Fin primera/última · q o Esc salir.
 - **Ratón (vista 3D):** arrastrar gira · botón derecho mueve · rueda acerca · doble clic restablece.
+- **Ratón (gráfica):** al pasar sobre un punto se ven n, E y la etiqueta · clic o arrastrar recorre las estructuras · arrastrar su borde superior la hace más alta o más baja.
+- **Eje de energía:** relativo (E − Emin) por defecto; la casilla *E - Emin* lo cambia a energías absolutas.
 
 La interfaz está en inglés.
 
@@ -85,7 +106,7 @@ mole examples/water_opt_trj.xyz
 | salida de Gaussian (`.out`, `.log`) | última geometría | última `SCF Done` |
 | salida de ORCA (`.out`, `.log`) | última geometría | su `FINAL SINGLE POINT ENERGY` |
 
-El programa que generó el archivo se reconoce por su contenido, no por la extensión. Las energías se muestran tal como se leen, sin convertir unidades. Las estructuras sin energía se pueden ver, pero no aparecen en la gráfica.
+El programa que generó el archivo se reconoce por su contenido, no por la extensión. Las energías se muestran tal como se leen, sin convertir unidades. Por defecto la gráfica muestra energías relativas, E − Emin, en las mismas unidades, y escribe Emin encima; la casilla *E - Emin* la cambia a energías absolutas. La cabecera y el recuadro del puntero siempre muestran cada energía tal como se leyó. Las estructuras sin energía se pueden ver, pero no aparecen en la gráfica.
 
 Probado con archivos XYZ y con salidas de Gaussian 16 Rev. B.01 y de ORCA 6.1.
 

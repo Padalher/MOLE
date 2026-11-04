@@ -153,6 +153,7 @@ pub enum Button {
     MoreTolerance,
     MetalMetal,
     Smooth,
+    RelativeEnergy,
 }
 
 /// Elemento de la barra de controles: botón o texto (con su ancho fijo en caracteres).
@@ -174,89 +175,111 @@ pub struct Layout {
     pub header: Rect,
     pub view: Rect,
     pub plot: Rect,
-    pub bar: Rect,
+    /// Columna de controles a la derecha, junto a la vista (menos recorrido del ratón entre la
+    /// figura y los botones).
+    pub panel: Rect,
     pub items: Vec<(BarItem, Rect)>,
 }
 
-/// Textos de ancho fijo de la barra (el valor cambia, el ancho no).
+/// Textos de ancho fijo de la columna de controles (el valor cambia, el ancho no).
 pub fn speed_text(speed: f64) -> String {
-    format!("{speed:>5} structures/s")
+    format!("{speed:>3} struct/s")
 }
 
 pub fn tolerance_text(t: f64) -> String {
-    format!("bond tolerance {t:.2}")
+    format!("tol {t:.2}")
 }
+
+/// Etiqueta de la casilla de enlaces metal–metal.
+pub const METAL_METAL_LABEL: &str = "M-M bonds";
+pub const RELATIVE_ENERGY_LABEL: &str = "E - Emin";
+
+/// Nombre de un botón de reproducción, junto a su icono.
+pub fn playback_label(b: Button, playing: bool) -> Option<&'static str> {
+    Some(match b {
+        Button::First => "First",
+        Button::Prev => "Previous",
+        Button::Play if playing => "Pause",
+        Button::Play => "Play",
+        Button::Next => "Next",
+        Button::Last => "Last",
+        _ => return None,
+    })
+}
+const PLAYBACK_LABEL_MAX: i32 = "Previous".len() as i32;
+
+/// Altura mínima de la gráfica y de la vista 3D al arrastrar el borde entre ambas.
+const MIN_PANE_H: i32 = 80;
 
 impl Layout {
     pub fn new(w: i32, h: i32, char_w: i32, line_h: i32) -> Self {
+        Self::with_plot_h(w, h, char_w, line_h, (h / 3).clamp(120, 280))
+    }
+
+    /// Como `new`, con la altura de la gráfica elegida por el usuario (limitada a la ventana).
+    pub fn with_plot_h(w: i32, h: i32, char_w: i32, line_h: i32, plot_h: i32) -> Self {
         let header = Rect {
             x: 0,
             y: 0,
             w,
             h: line_h + 10,
         };
-        let bar_h = (line_h + 14).max(32);
-        let bar = Rect {
-            x: 0,
-            y: h - bar_h,
-            w,
-            h: bar_h,
+        // Una sola columna, un control por fila, botones grandes (`bh` de alto). Los de
+        // reproducción llevan icono + nombre, así que la columna cabe su nombre más largo.
+        let (bh, gap, pad) = ((2 * line_h + 4).max(34), 4, 6);
+        let text_w = char_w * speed_text(0.0).len() as i32 + 4;
+        let inner = (2 * bh + 2 * gap + text_w).max(bh + char_w * (PLAYBACK_LABEL_MAX + 2));
+        let panel_w = (inner + 2 * pad).min(w);
+        let panel = Rect {
+            x: w - panel_w,
+            y: header.h,
+            w: panel_w,
+            h: (h - header.h).max(0),
         };
-        let plot_h = (h / 3).clamp(120, 280);
+        let left = w - panel_w;
+        let plot_h = plot_h.min(h - header.h - MIN_PANE_H).max(MIN_PANE_H);
         let plot = Rect {
             x: 0,
-            y: bar.y - plot_h,
-            w,
+            y: h - plot_h,
+            w: left,
             h: plot_h,
         };
         let view = Rect {
             x: 0,
             y: header.h,
-            w,
+            w: left,
             h: (plot.y - header.h).max(0),
         };
-        let (bh, by) = (bar_h - 8, bar.y + 4);
-        let mut x = 6;
+        let (x0, x1) = (panel.x + pad, panel.x + panel_w - pad);
+        let value_w = x1 - x0 - 2 * (bh + gap);
         let mut items = Vec::new();
-        let mut push = |item, width: i32, gap: i32| {
-            items.push((
-                item,
-                Rect {
-                    x,
-                    y: by,
-                    w: width,
-                    h: bh,
-                },
-            ));
-            x += width + gap;
-        };
-        let sq = bh + 6;
-        for b in [Button::First, Button::Prev, Button::Play, Button::Next] {
-            push(BarItem::Button(b), sq, 4);
+        let mut put = |item, x: i32, w: i32, y: i32| items.push((item, Rect { x, y, w, h: bh }));
+        let mut y = panel.y + pad;
+        for b in [
+            Button::First,
+            Button::Prev,
+            Button::Play,
+            Button::Next,
+            Button::Last,
+        ] {
+            put(BarItem::Button(b), x0, x1 - x0, y);
+            y += bh + gap;
         }
-        push(BarItem::Button(Button::Last), sq, 16);
-        let small = bh;
-        push(BarItem::Button(Button::Slower), small, 4);
-        push(BarItem::Speed, char_w * speed_text(0.0).len() as i32 + 4, 4);
-        push(BarItem::Button(Button::Faster), small, 12);
-        push(BarItem::Button(Button::Loop), small + char_w * 5, 20);
-        push(BarItem::Button(Button::LessTolerance), small, 4);
-        push(
-            BarItem::Tolerance,
-            char_w * tolerance_text(0.0).len() as i32 + 4,
-            4,
-        );
-        push(BarItem::Button(Button::MoreTolerance), small, 12);
-        push(
-            BarItem::Button(Button::MetalMetal),
-            small + char_w * "Metal-metal bonds".len() as i32 + 6,
-            20,
-        );
-        push(
-            BarItem::Button(Button::Smooth),
-            small + char_w * "Smooth".len() as i32 + 6,
-            0,
-        );
+        // Filas [−] valor [+] y casillas de todo el ancho; más hueco entre grupos.
+        y += 10;
+        put(BarItem::Button(Button::Slower), x0, bh, y);
+        put(BarItem::Speed, x0 + bh + gap, value_w, y);
+        put(BarItem::Button(Button::Faster), x1 - bh, bh, y);
+        y += bh + 4;
+        put(BarItem::Button(Button::Loop), x0, x1 - x0, y);
+        y += bh + 14;
+        put(BarItem::Button(Button::LessTolerance), x0, bh, y);
+        put(BarItem::Tolerance, x0 + bh + gap, value_w, y);
+        put(BarItem::Button(Button::MoreTolerance), x1 - bh, bh, y);
+        for b in [Button::MetalMetal, Button::Smooth, Button::RelativeEnergy] {
+            y += bh + 4;
+            put(BarItem::Button(b), x0, x1 - x0, y);
+        }
         Layout {
             w,
             h,
@@ -265,9 +288,14 @@ impl Layout {
             header,
             view,
             plot,
-            bar,
+            panel,
             items,
         }
+    }
+
+    /// Borde entre la vista 3D y la gráfica: arrastrarlo cambia la altura de la gráfica.
+    pub fn on_splitter(&self, x: i32, y: i32) -> bool {
+        x < self.plot.w && (y - self.plot.y).abs() <= 4
     }
 
     pub fn button_at(&self, x: i32, y: i32) -> Option<Button> {
@@ -284,6 +312,8 @@ pub struct PlotMap {
     pub area: Rect,
     pub n: (f64, f64),
     pub e: (f64, f64),
+    /// Energía de referencia (la mínima) cuando el eje muestra E − Emin.
+    pub e_ref: Option<f64>,
 }
 
 impl PlotMap {
@@ -331,6 +361,7 @@ pub enum Hover {
     Atom(usize),
     Plot(usize),
     Button(Button),
+    Splitter,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -394,11 +425,137 @@ pub fn element_rgb(z: u8) -> [f64; 3] {
         29 => [200, 120, 70],
         47 => [200, 200, 210],
         79 => [235, 190, 40],
-        z if elements::is_metal(z) => [150, 150, 165],
-        _ => [200, 120, 200],
+        z => ELEMENT_COLORS
+            .get(usize::from(z).wrapping_sub(1))
+            .copied()
+            .unwrap_or([200, 120, 200]),
     };
     c.map(|v| f64::from(v) / 255.0)
 }
+
+/// Colores de Z = 1..=118 para los elementos sin color propio arriba: `bo:elementColor` del
+/// Blue Obelisk Data Repository (`bodr/elements/elements.xml`), licencia MIT,
+/// © The Blue Obelisk Movement.
+const ELEMENT_COLORS: [[u8; 3]; 118] = [
+    [255, 255, 255],
+    [217, 255, 255],
+    [204, 128, 255],
+    [194, 255, 0],
+    [255, 181, 181],
+    [128, 128, 128],
+    [13, 13, 255],
+    [255, 13, 13],
+    [178, 255, 255],
+    [178, 227, 245],
+    [171, 92, 242],
+    [138, 255, 0],
+    [191, 166, 166],
+    [128, 153, 153],
+    [255, 128, 0],
+    [255, 255, 48],
+    [31, 240, 31],
+    [128, 209, 227],
+    [143, 64, 212],
+    [61, 255, 0],
+    [230, 230, 230],
+    [191, 194, 199],
+    [166, 166, 171],
+    [138, 153, 199],
+    [156, 122, 199],
+    [128, 122, 199],
+    [112, 122, 199],
+    [92, 122, 194],
+    [255, 122, 97],
+    [125, 128, 176],
+    [194, 143, 143],
+    [102, 143, 143],
+    [189, 128, 227],
+    [255, 161, 0],
+    [166, 41, 41],
+    [92, 184, 209],
+    [112, 46, 176],
+    [0, 255, 0],
+    [148, 255, 255],
+    [148, 224, 224],
+    [115, 194, 201],
+    [84, 181, 181],
+    [59, 158, 158],
+    [36, 143, 143],
+    [10, 125, 140],
+    [0, 105, 133],
+    [224, 224, 255],
+    [255, 217, 143],
+    [166, 117, 115],
+    [102, 128, 128],
+    [158, 99, 181],
+    [212, 122, 0],
+    [148, 0, 148],
+    [66, 158, 176],
+    [87, 23, 143],
+    [0, 201, 0],
+    [112, 212, 255],
+    [255, 255, 199],
+    [217, 255, 199],
+    [199, 255, 199],
+    [163, 255, 199],
+    [143, 255, 199],
+    [97, 255, 199],
+    [69, 255, 199],
+    [48, 255, 199],
+    [31, 255, 199],
+    [0, 255, 156],
+    [0, 230, 117],
+    [0, 212, 82],
+    [0, 191, 56],
+    [0, 171, 36],
+    [76, 194, 255],
+    [76, 166, 255],
+    [33, 148, 214],
+    [38, 125, 171],
+    [38, 102, 150],
+    [23, 84, 135],
+    [245, 237, 209],
+    [204, 209, 31],
+    [181, 181, 194],
+    [166, 84, 76],
+    [87, 89, 97],
+    [158, 79, 181],
+    [171, 92, 0],
+    [117, 79, 69],
+    [66, 130, 150],
+    [66, 0, 102],
+    [0, 125, 0],
+    [112, 171, 250],
+    [0, 186, 255],
+    [0, 161, 255],
+    [0, 143, 255],
+    [0, 128, 255],
+    [0, 107, 255],
+    [84, 92, 242],
+    [120, 92, 227],
+    [138, 79, 227],
+    [161, 54, 212],
+    [178, 31, 212],
+    [178, 31, 186],
+    [178, 13, 166],
+    [189, 13, 135],
+    [199, 0, 102],
+    [204, 0, 89],
+    [209, 0, 79],
+    [217, 0, 69],
+    [224, 0, 56],
+    [230, 0, 46],
+    [232, 0, 38],
+    [235, 0, 36],
+    [237, 0, 33],
+    [240, 0, 31],
+    [242, 0, 28],
+    [245, 0, 26],
+    [247, 0, 23],
+    [250, 0, 20],
+    [252, 0, 18],
+    [255, 0, 15],
+];
 
 /// Radio de dibujo en Å (bolas y barras).
 fn ball_radius(z: u8) -> f64 {
@@ -412,6 +569,8 @@ pub struct App {
     pub player: Player,
     pub bond_tolerance: f64,
     pub metal_metal: bool,
+    /// Eje E relativo al mínimo (E − Emin, en las unidades del archivo) en lugar de absoluto.
+    pub relative_energy: bool,
     /// Dibujo suavizado (XRender) en lugar de primitivas X11 básicas.
     pub smooth: bool,
     pub layout: Layout,
@@ -425,6 +584,12 @@ pub struct App {
     extent: f64,
     /// (botón, última posición) del arrastre en curso en la vista 3D.
     drag: Option<(u8, i32, i32)>,
+    /// Botón izquierdo pulsado sobre la gráfica: al mover el ratón se recorren las estructuras.
+    scrub: bool,
+    /// Arrastrando el borde de la gráfica; `plot_h`, la altura elegida (se conserva al
+    /// redimensionar la ventana).
+    resizing_plot: bool,
+    plot_h: Option<i32>,
     last_click: Option<(f64, i32, i32)>,
     bonds: BondCache,
 }
@@ -457,7 +622,8 @@ impl App {
             player: Player::new(loaded.structures.len()),
             loaded,
             bond_tolerance: DEFAULT_BOND_TOLERANCE,
-            metal_metal: false,
+            metal_metal: true,
+            relative_energy: true,
             smooth: false,
             layout,
             hover: Hover::None,
@@ -468,6 +634,9 @@ impl App {
             pan: (0.0, 0.0),
             extent,
             drag: None,
+            scrub: false,
+            resizing_plot: false,
+            plot_h: None,
             last_click: None,
             bonds: (None, Vec::new()),
         }
@@ -495,17 +664,21 @@ impl App {
         let (cw, lh) = (self.layout.char_w, self.layout.line_h);
         let p = self.layout.plot;
         let left = cw * 13;
+        let e_ref = self.relative_energy.then_some(lo);
+        // Con E − Emin, una línea más arriba para el rótulo con el valor de Emin.
+        let top = lh / 2 + 6 + if e_ref.is_some() { lh } else { 0 };
         let area = Rect {
             x: p.x + left,
-            y: p.y + lh / 2 + 6,
+            y: p.y + top,
             w: (p.w - left - cw * 3).max(10),
-            h: (p.h - 2 * lh - 14).max(10),
+            h: (p.h - top - 3 * lh / 2 - 8).max(10),
         };
         let n = self.loaded.structures.len() as f64;
         Some(PlotMap {
             area,
             n: (0.5, n + 0.5),
             e: (lo - pad, hi + pad),
+            e_ref,
         })
     }
 
@@ -601,6 +774,8 @@ impl App {
         let l = &self.layout;
         if let Some(b) = l.button_at(x, y) {
             Hover::Button(b)
+        } else if l.on_splitter(x, y) {
+            Hover::Splitter
         } else if l.view.contains(x, y) {
             self.atom_at(x, y).map_or(Hover::None, Hover::Atom)
         } else if l.plot.contains(x, y)
@@ -611,6 +786,17 @@ impl App {
             nearest_with_energy(&self.loaded.structures, m.n_at(x)).map_or(Hover::None, Hover::Plot)
         } else {
             Hover::None
+        }
+    }
+
+    /// Selecciona la estructura con energía más cercana a la columna `x` de la gráfica (fuera del
+    /// área, la del extremo).
+    fn scrub_to(&mut self, x: i32) {
+        if let Some(m) = self.plot_map() {
+            let x = x.clamp(m.area.x, m.area.x + m.area.w);
+            if let Some(i) = nearest_with_energy(&self.loaded.structures, m.n_at(x)) {
+                self.player.go(i);
+            }
         }
     }
 
@@ -633,6 +819,7 @@ impl App {
             }
             Button::MetalMetal => self.metal_metal = !self.metal_metal,
             Button::Smooth => self.smooth = !self.smooth,
+            Button::RelativeEnergy => self.relative_energy = !self.relative_energy,
         }
     }
 
@@ -642,7 +829,10 @@ impl App {
         match input {
             Input::Resize { w, h } => {
                 let (cw, lh) = (self.layout.char_w, self.layout.line_h);
-                self.layout = Layout::new(w, h, cw, lh);
+                self.layout = match self.plot_h {
+                    Some(ph) => Layout::with_plot_h(w, h, cw, lh, ph),
+                    None => Layout::new(w, h, cw, lh),
+                };
                 return true;
             }
             Input::Key(k) => match k {
@@ -662,12 +852,15 @@ impl App {
                     self.press(b, now);
                     return true;
                 }
+                if button == 1 && l.on_splitter(x, y) {
+                    self.resizing_plot = true;
+                    return true;
+                }
                 if l.plot.contains(x, y) {
-                    // Gráfica estática: solo el clic izquierdo selecciona.
-                    if button == 1
-                        && let Hover::Plot(i) = self.hover_at(x, y)
-                    {
-                        self.player.go(i);
+                    // Gráfica estática: el botón izquierdo selecciona y, arrastrando, recorre.
+                    if button == 1 {
+                        self.scrub = true;
+                        self.scrub_to(x);
                     }
                 } else if l.view.contains(x, y) {
                     match button {
@@ -696,12 +889,22 @@ impl App {
                 }
             }
             Input::Release { button } => {
+                self.scrub &= button != 1;
+                self.resizing_plot &= button != 1;
                 if self.drag.is_some_and(|(b, _, _)| b == button) {
                     self.drag = None;
                 }
             }
             Input::Motion { x, y } => {
                 self.pointer = (x, y);
+                if self.resizing_plot {
+                    let l = &self.layout;
+                    let ph = l.h - y;
+                    self.layout = Layout::with_plot_h(l.w, l.h, l.char_w, l.line_h, ph);
+                    self.plot_h = Some(self.layout.plot.h);
+                    self.hover = Hover::Splitter;
+                    return true;
+                }
                 if let Some((b, px, py)) = self.drag {
                     let (dx, dy) = (f64::from(x - px), f64::from(y - py));
                     if b == 1 {
@@ -712,6 +915,9 @@ impl App {
                     self.drag = Some((b, x, y));
                     self.hover = Hover::None;
                     return true;
+                }
+                if self.scrub {
+                    self.scrub_to(x);
                 }
             }
             Input::Leave => {
@@ -840,13 +1046,50 @@ mod tests {
     #[test]
     fn layout_fits_and_buttons_do_not_overlap() {
         let l = Layout::new(1200, 800, 9, 15);
-        assert_eq!(l.header.h + l.view.h + l.plot.h + l.bar.h, 800);
+        assert_eq!(l.header.h + l.view.h + l.plot.h, 800);
+        assert_eq!(l.view.w + l.panel.w, 1200);
+        assert!(l.panel.w < 240, "columna estrecha: {}", l.panel.w);
+        // Un control por fila (los de reproducción, de todo el ancho), todos en la mitad de arriba.
+        for b in [
+            Button::First,
+            Button::Prev,
+            Button::Play,
+            Button::Next,
+            Button::Last,
+        ] {
+            let r = l
+                .items
+                .iter()
+                .find(|i| i.0 == BarItem::Button(b))
+                .unwrap()
+                .1;
+            assert!(r.h >= 34 && r.w > l.panel.w - 20, "{b:?} pequeño: {r:?}");
+        }
+        let bottom = l.items.iter().map(|i| i.1.y + i.1.h).max().unwrap();
+        assert!(bottom < 800 * 2 / 3, "los controles bajan hasta {bottom}");
+        let inside = |a: Rect, b: Rect| {
+            b.x <= a.x && a.x + a.w <= b.x + b.w && b.y <= a.y && a.y + a.h <= b.y + b.h
+        };
         let rects: Vec<Rect> = l.items.iter().map(|i| i.1).collect();
         for (i, a) in rects.iter().enumerate() {
-            assert!(a.x + a.w <= 1200, "{:?} se sale", l.items[i]);
+            assert!(
+                inside(*a, l.panel),
+                "{:?} se sale de la columna",
+                l.items[i]
+            );
             for b in &rects[i + 1..] {
-                assert!(a.x + a.w <= b.x, "{a:?} y {b:?} se solapan");
+                let apart =
+                    a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+                assert!(apart, "{a:?} y {b:?} se solapan");
             }
+        }
+        // Los textos de valor caben entre sus botones − y +.
+        for (item, text) in [
+            (BarItem::Speed, speed_text(120.0)),
+            (BarItem::Tolerance, tolerance_text(1.6)),
+        ] {
+            let r = l.items.iter().find(|i| i.0 == item).unwrap().1;
+            assert!(9 * text.len() as i32 <= r.w, "{text} no cabe en {r:?}");
         }
     }
 
@@ -873,8 +1116,14 @@ mod tests {
         assert!(!a.player.looping);
         press(&mut a, Button::MoreTolerance);
         assert!((a.bond_tolerance - 1.30).abs() < 1e-9);
+        assert!(a.metal_metal, "enlaces metal–metal activados por defecto");
         press(&mut a, Button::MetalMetal);
-        assert!(a.metal_metal);
+        assert!(!a.metal_metal);
+        assert!(a.relative_energy, "eje E relativo por defecto");
+        assert_eq!(a.plot_map().unwrap().e_ref, Some(0.0));
+        press(&mut a, Button::RelativeEnergy);
+        assert!(!a.relative_energy);
+        assert_eq!(a.plot_map().unwrap().e_ref, None);
         press(&mut a, Button::Smooth);
         assert!(a.smooth);
     }
@@ -896,21 +1145,81 @@ mod tests {
         assert!(a.quit);
     }
 
-    /// Clic en la gráfica: selecciona la estructura bajo el puntero; arrastrar no la desplaza.
+    /// Clic en la gráfica: selecciona la estructura bajo el puntero; arrastrar recorre las
+    /// estructuras, pero la gráfica no se desplaza.
+    /// Arrastrar el borde superior de la gráfica cambia su altura; la vista 3D ocupa el resto y
+    /// la altura elegida se conserva al redimensionar la ventana.
     #[test]
-    fn static_plot_click_and_hover() {
+    fn plot_height_follows_the_dragged_edge() {
+        let mut a = app(5);
+        let (h0, y0) = (a.layout.plot.h, a.layout.plot.y);
+        a.handle(Input::Motion { x: 100, y: y0 }, 0.0);
+        assert_eq!(a.hover, Hover::Splitter);
+        a.handle(
+            Input::Press {
+                x: 100,
+                y: y0,
+                button: 1,
+            },
+            0.0,
+        );
+        a.handle(
+            Input::Motion {
+                x: 100,
+                y: y0 - 100,
+            },
+            0.0,
+        );
+        a.handle(Input::Release { button: 1 }, 0.0);
+        let l = &a.layout;
+        assert_eq!(l.plot.h, h0 + 100);
+        assert_eq!(l.header.h + l.view.h + l.plot.h, l.h);
+        // Más pequeña que el mínimo no: la gráfica sigue siendo usable.
+        a.handle(
+            Input::Press {
+                x: 100,
+                y: a.layout.plot.y,
+                button: 1,
+            },
+            0.0,
+        );
+        a.handle(Input::Motion { x: 100, y: 5000 }, 0.0);
+        a.handle(Input::Release { button: 1 }, 0.0);
+        assert_eq!(a.layout.plot.h, MIN_PANE_H);
+        a.handle(Input::Resize { w: 1400, h: 900 }, 0.0);
+        assert_eq!(a.layout.plot.h, MIN_PANE_H, "se conserva al redimensionar");
+        // El borde no se confunde con la gráfica: arrastrarlo no cambia de estructura.
+        assert_eq!(a.player.current, 0);
+    }
+
+    #[test]
+    fn static_plot_click_hover_and_scrub() {
         let mut a = app(10);
         let m = a.plot_map().unwrap();
         let (x, y) = (m.x(5.0) as i32, m.y(4.0) as i32);
         a.handle(Input::Motion { x, y }, 0.0);
         assert_eq!(a.hover, Hover::Plot(4), "pasar el ratón muestra n = 5");
-        // Arrastre en la gráfica: no hay desplazamiento posible.
-        a.handle(Input::Press { x, y, button: 1 }, 0.0);
-        a.handle(Input::Motion { x: x + 150, y }, 0.0);
-        a.handle(Input::Release { button: 1 }, 0.0);
         click(&mut a, x, y);
         assert_eq!(a.player.current, 4);
-        assert_eq!(a.plot_map().unwrap().area, m.area);
+        a.handle(Input::Press { x, y, button: 1 }, 0.0);
+        a.handle(
+            Input::Motion {
+                x: m.x(8.0) as i32,
+                y,
+            },
+            0.0,
+        );
+        assert_eq!(a.player.current, 7, "arrastrar recorre las estructuras");
+        a.handle(Input::Motion { x: x + 5000, y }, 0.0);
+        assert_eq!(a.player.current, 9, "fuera del área, la del extremo");
+        a.handle(Input::Release { button: 1 }, 0.0);
+        a.handle(Input::Motion { x, y }, 0.0);
+        assert_eq!(a.player.current, 9, "al soltar deja de recorrer");
+        assert_eq!(
+            a.plot_map().unwrap().area,
+            m.area,
+            "la gráfica no se desplaza"
+        );
     }
 
     #[test]

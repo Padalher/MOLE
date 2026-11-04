@@ -1,7 +1,18 @@
 # Changelog
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [0.2.1] — 2026-10-22
+## [0.3.0] — 2026-11-04
+### Changed
+- The controls are in a single column at the top right, next to the 3D view, one per row: the playback buttons are larger and labeled (First, Previous, Play/Pause, Next, Last), so the mouse travels less between the structure and the buttons. The 3D view and the E vs n plot share the rest of the window.
+- Metal–metal bonds are drawn by default, so pure metal clusters (Cu, Ag, Au…) show their bonds when opened; the *M-M bonds* checkbox turns them off.
+- Every element has its own color: elements without a MOLE-specific color use the Blue Obelisk Data Repository colors (MIT license).
+
+### Added
+- MOLE icon (`assets/mole.svg`); the window sets it (`_NET_WM_ICON`), so docks and taskbars show it instead of a generic icon, also over `ssh -Y`.
+- Dragging with the left button on the E vs n plot browses the structures; the plot itself still does not move or zoom.
+- Dragging the top edge of the E vs n plot makes it taller or shorter; the 3D view takes the rest of the height, and the chosen height is kept when the window is resized.
+- The E axis shows relative energies, E − Emin, by default (in the units of the file, with the value of Emin above the plot), so large values such as `-3219847.95` no longer give long axis labels; the *E - Emin* checkbox switches the axis to the absolute energies as read. The header and the tooltip always show each energy as read.
+
 ### Fixed
 - macOS (XQuartz): `mole` could not open the window ("cannot connect to the X display: No such file or directory"). The `DISPLAY` path that XQuartz sets (`/private/tmp/com.apple.launchd.…/org.xquartz:0`) was ignored by x11rb 0.14, which tried `/tmp/.X11-unix/X0` instead; MOLE now connects to that path.
 

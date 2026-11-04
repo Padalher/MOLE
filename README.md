@@ -1,12 +1,31 @@
-# MOLE
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Padalher/MOLE/main/assets/mole.svg" alt="MOLE logo" width="112">
+</p>
 
-*[Versión en español](https://github.com/Padalher/MOLE/blob/main/README.es.md)*
+<h1 align="center">MOLE</h1>
 
-MOLE is a lightweight viewer for ensembles of molecular structures (conformer searches, global optimization runs, geometry optimization trajectories). Launched from the terminal, it opens a window with:
+<p align="center">
+  <b>A lightweight viewer for ensembles of molecular structures, with an E vs n energy plot.</b><br>
+  Fluid over <code>ssh -Y</code> from an HPC cluster · a single executable · reads XYZ, Gaussian and ORCA files
+</p>
+
+<p align="center">
+  <a href="https://pypi.org/project/mole-viewer/"><img src="https://img.shields.io/pypi/v/mole-viewer?label=PyPI" alt="PyPI"></a>
+  <a href="https://github.com/Padalher/MOLE/actions/workflows/ci.yml"><img src="https://github.com/Padalher/MOLE/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/Padalher/MOLE/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT license"></a>
+</p>
+
+<p align="center"><i><a href="https://github.com/Padalher/MOLE/blob/main/README.es.md">Versión en español</a></i></p>
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Padalher/MOLE/main/assets/screenshot.png" alt="MOLE window: 3D view of a water molecule, E vs n plot of its geometry optimization and the controls column" width="820">
+</p>
+
+MOLE is made for conformer searches, global optimization runs and geometry optimization trajectories. Launched from the terminal, it opens a window with:
 
 - **the 3D structure**: ball and stick; rotate, move and zoom with the mouse;
-- **the energy plot E vs n**: hover a point to see n, E and the label; click it to show that structure;
-- **playback controls**: first, previous, play/pause, next, last, speed and loop.
+- **the energy plot E vs n**: relative energies (E − Emin) by default; hover a point to see n, E and the label; click or drag to browse the structures;
+- **a column of controls next to the structure**: first, previous, play/pause, next, last, speed, loop, bond tolerance and metal–metal bonds.
 
 MOLE is designed to run **on a remote machine (an HPC cluster or a workstation) and be viewed over `ssh -Y`**. It draws with the core X11 protocol, so only drawing commands travel over the network (a few KB per frame), and the window stays fluid even on a home connection. It only reads results; it never runs calculations.
 
@@ -70,6 +89,8 @@ mole --help
 
 - **Keyboard:** ← → previous/next · space play/pause · Home/End first/last · q or Esc quit.
 - **Mouse (3D view):** drag to rotate · right button to move · wheel to zoom · double click to reset.
+- **Mouse (plot):** hover a point to see n, E and the label · click or drag to browse the structures · drag its top edge to make it taller or shorter.
+- **Energy axis:** relative (E − Emin) by default; the *E - Emin* checkbox switches to absolute energies.
 
 **Try it** with the example included in this repository: the geometry optimization of a distorted water molecule (ORCA 6.1.1, B3LYP-D3BJ/def2-SVP, input in [`examples/water_opt.inp`](https://github.com/Padalher/MOLE/blob/main/examples/water_opt.inp)):
 ```bash
@@ -83,7 +104,7 @@ mole examples/water_opt_trj.xyz
 | Gaussian output (`.out`, `.log`) | last geometry | last `SCF Done` |
 | ORCA output (`.out`, `.log`) | last geometry | its `FINAL SINGLE POINT ENERGY` |
 
-The program is recognized by the file contents, not by the extension. Energies are shown as read, without unit conversion. Structures without an energy can be viewed, but they are not plotted.
+The program is recognized by the file contents, not by the extension. Energies are shown as read, without unit conversion. By default the plot shows relative energies, E − Emin, in the same units, and writes Emin above it; the *E - Emin* checkbox switches it to absolute energies. The header and the tooltip always show each energy as read. Structures without an energy can be viewed, but they are not plotted.
 
 Tested with XYZ files, Gaussian 16 Rev. B.01 and ORCA 6.1 outputs.
 

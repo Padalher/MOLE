@@ -3,8 +3,8 @@
 //! gráfica se dibuja una vez en un pixmap del servidor y se copia en cada fotograma.
 
 use crate::app::{
-    App, BarItem, Button, Hover, Input, Key, Layout, Rect, Shape3d, nice_ticks, speed_text,
-    tick_text, tolerance_text,
+    App, BarItem, Button, Hover, Input, Key, Layout, METAL_METAL_LABEL, RELATIVE_ENERGY_LABEL,
+    Rect, Shape3d, nice_ticks, playback_label, speed_text, tick_text, tolerance_text,
 };
 use crate::cli::Options;
 use mole_core::{Loaded, elements};
@@ -611,11 +611,12 @@ impl Window<'_> {
         let a = local(m.area);
         let (cw, lh, asc) = (self.font.char_w, self.font.line_h, self.font.ascent);
         c.set_font(self.font.id)?;
-        // Marcas de energía (eje y) con su valor.
-        let (ticks, step) = nice_ticks(m.e.0, m.e.1, (a.h / (2 * lh)).max(2) as usize);
+        // Marcas de energía (eje y) con su valor; relativas a Emin si las absolutas son largas.
+        let r = m.e_ref.unwrap_or(0.0);
+        let (ticks, step) = nice_ticks(m.e.0 - r, m.e.1 - r, (a.h / (2 * lh)).max(2) as usize);
         let mut grid = Vec::new();
         for &e in &ticks {
-            let y = (m.y(e) - f64::from(off)).round() as i32;
+            let y = (m.y(e + r) - f64::from(off)).round() as i32;
             grid.push(seg(a.x, y, a.x + a.w, y));
             let t = tick_text(e, step);
             c.text(d, a.x - 6 - cw * t.len() as i32, y + asc / 2 - 1, &t, WEAK)?;
@@ -645,7 +646,13 @@ impl Window<'_> {
             },
             WEAK,
         )?;
-        c.text(d, 8, a.y + asc, "E", TEXT)?;
+        match m.e_ref {
+            Some(e_min) => {
+                let label = format!("E - Emin    (Emin = {e_min})");
+                c.text(d, 8, a.y - lh / 2 - 4, &label, TEXT)?
+            }
+            None => c.text(d, 8, a.y + asc, "E", TEXT)?,
+        }
         c.text(d, a.x + a.w + cw / 2, a.y + a.h + asc + 4, "n", TEXT)?;
         // Datos: línea y, si no están demasiado juntos, puntos.
         let pts: Vec<(f64, f64)> = app
@@ -711,6 +718,24 @@ impl Window<'_> {
         let hint = "drag: rotate · right button: pan · wheel: zoom · double-click: reset";
         c.text(d, l.view.x + 8, l.view.y + l.view.h - 8, hint, WEAK)?;
 
+        // Columna de controles (antes que la gráfica: sus tooltips quedan encima).
+        c.rect(d, l.panel, BG_PANEL)?;
+        c.rect(d, Rect { w: 1, ..l.panel }, GRID)?;
+        for &(item, r) in &l.items {
+            let ty = r.y + (r.h + asc) / 2 - 1;
+            let text = match item {
+                BarItem::Speed => speed_text(app.player.speed),
+                BarItem::Tolerance => tolerance_text(app.bond_tolerance),
+                BarItem::Button(b) => {
+                    self.button(app, b, r)?;
+                    continue;
+                }
+            };
+            // Centrado entre los botones − y +.
+            let tx = r.x + (r.w - cw * text.len() as i32) / 2;
+            c.text(d, tx, ty, &text, TEXT)?;
+        }
+
         // Gráfica: capa estática + estructura actual + punto bajo el puntero.
         self.conn.copy_area(
             self.plot,
@@ -720,9 +745,17 @@ impl Window<'_> {
             0,
             0,
             l.plot.y as i16,
-            l.w.max(1) as u16,
+            l.plot.w.max(1) as u16,
             l.plot.h.max(1) as u16,
         )?;
+        if app.hover == Hover::Splitter {
+            let edge = Rect {
+                y: l.plot.y - 1,
+                h: 3,
+                ..l.plot
+            };
+            c.rect(d, edge, ACCENT)?;
+        }
         let structures = &app.loaded.structures;
         if let Some(m) = app.plot_map() {
             let cur = app.player.current;
@@ -739,6 +772,12 @@ impl Window<'_> {
                 c.circles(d, &[p], 4.5, TEXT)?;
                 let s = &structures[i];
                 let mut lines = vec![format!("n = {}", i + 1), format!("E = {e}")];
+                if let Some(e_min) = m.e_ref {
+                    // Sin el ruido de la resta en coma flotante (1.8200000000651926).
+                    let rel = format!("{:.6}", e - e_min);
+                    let rel = rel.trim_end_matches('0').trim_end_matches('.');
+                    lines.push(format!("E - Emin = {rel}"));
+                }
                 if !s.label.is_empty() {
                     lines.push(s.label.clone());
                 }
@@ -785,21 +824,6 @@ impl Window<'_> {
             )?;
         }
 
-        // Barra de controles.
-        c.rect(d, l.bar, BG_PANEL)?;
-        c.rect(d, Rect { h: 1, ..l.bar }, GRID)?;
-        c.set_font(self.font.id)?;
-        for &(item, r) in &l.items {
-            let ty = r.y + (r.h + asc) / 2 - 1;
-            match item {
-                BarItem::Speed => c.text(d, r.x + 2, ty, &speed_text(app.player.speed), TEXT)?,
-                BarItem::Tolerance => {
-                    c.text(d, r.x + 2, ty, &tolerance_text(app.bond_tolerance), TEXT)?
-                }
-                BarItem::Button(b) => self.button(app, b, r)?,
-            }
-        }
-
         // Átomo bajo el puntero.
         if let Hover::Atom(i) = app.hover {
             let a = &app.structure().atoms[i];
@@ -822,8 +846,9 @@ impl Window<'_> {
         let hovered = app.hover == Hover::Button(b);
         let checkbox = match b {
             Button::Loop => Some((app.player.looping, "Loop")),
-            Button::MetalMetal => Some((app.metal_metal, "Metal-metal bonds")),
+            Button::MetalMetal => Some((app.metal_metal, METAL_METAL_LABEL)),
             Button::Smooth => Some((app.smooth, "Smooth")),
+            Button::RelativeEnergy => Some((app.relative_energy, RELATIVE_ENERGY_LABEL)),
             _ => None,
         };
         let (cw, asc) = (self.font.char_w, self.font.ascent);
@@ -855,7 +880,16 @@ impl Window<'_> {
         };
         c.rect(d, r, face)?;
         c.outline(d, r, [0.32, 0.32, 0.36])?;
-        let (cx, cy) = (r.x + r.w / 2, r.y + r.h / 2);
+        // Reproducción: icono en un cuadrado a la izquierda y el nombre a su lado.
+        let label = playback_label(b, app.player.playing);
+        let cx = match label {
+            Some(text) => {
+                c.text(d, r.x + r.h + cw / 2, ty, text, TEXT)?;
+                r.x + r.h / 2 + 2
+            }
+            None => r.x + r.w / 2,
+        };
+        let cy = r.y + r.h / 2;
         let k = (r.h / 4).max(3);
         let right = |x: i32| [(x - k, cy - k), (x + k, cy), (x - k, cy + k)];
         let left = |x: i32| [(x + k, cy - k), (x - k, cy), (x + k, cy + k)];
@@ -931,7 +965,7 @@ impl Window<'_> {
                     TEXT,
                 )?;
             }
-            Button::Loop | Button::MetalMetal | Button::Smooth => {}
+            Button::Loop | Button::MetalMetal | Button::Smooth | Button::RelativeEnergy => {}
         }
         Ok(())
     }
@@ -1133,6 +1167,23 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
         AtomEnum::STRING,
         b"mole\0MOLE\0",
     )?;
+    // Ícono de la ventana (sin él, los docks muestran uno genérico): `assets/mole.svg` en 48 y
+    // 128 px, como [ancho, alto, píxeles ARGB…] en u32 little-endian. Se regenera con cairosvg
+    // y Pillow si cambia el SVG.
+    const ICON: &[u8] = include_bytes!("../assets/icon.argb");
+    let icon: Vec<u32> = ICON
+        .as_chunks()
+        .0
+        .iter()
+        .map(|&b| u32::from_le_bytes(b))
+        .collect();
+    conn.change_property32(
+        PropMode::REPLACE,
+        win,
+        atom(b"_NET_WM_ICON")?,
+        AtomEnum::CARDINAL,
+        &icon,
+    )?;
     conn.change_property32(
         PropMode::REPLACE,
         win,
@@ -1197,9 +1248,47 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
     {
         app.player.go(n.saturating_sub(1));
     }
+    // `MOLE_CAPTURE_DRAG=dx,dy`: arrastre simulado en la vista 3D antes de capturar.
+    #[cfg(debug_assertions)]
+    if let Some((dx, dy)) = std::env::var("MOLE_CAPTURE_DRAG").ok().and_then(|s| {
+        let (a, b) = s.split_once(',')?;
+        Some((a.parse::<i32>().ok()?, b.parse::<i32>().ok()?))
+    }) {
+        let v = app.layout.view;
+        let (x, y) = (v.x + v.w / 2, v.y + v.h / 2);
+        app.handle(Input::Motion { x, y }, 0.0);
+        app.handle(Input::Press { x, y, button: 1 }, 0.0);
+        app.handle(
+            Input::Motion {
+                x: x + dx,
+                y: y + dy,
+            },
+            0.0,
+        );
+        app.handle(Input::Release { button: 1 }, 0.0);
+    }
 
     let t0 = Instant::now();
     let now = || t0.elapsed().as_secs_f64();
+    // Cursor ↕ sobre el borde entre la vista y la gráfica (fuente estándar "cursor" de X11,
+    // glifo XC_sb_v_double_arrow = 116 y su máscara, 117).
+    let resize_cursor = conn.generate_id()?;
+    let cursor_font = conn.generate_id()?;
+    conn.open_font(cursor_font, b"cursor")?;
+    conn.create_glyph_cursor(
+        resize_cursor,
+        cursor_font,
+        cursor_font,
+        116,
+        117,
+        0,
+        0,
+        0,
+        0xffff,
+        0xffff,
+        0xffff,
+    )?;
+    conn.close_font(cursor_font)?;
     let (mut dirty, mut plot_dirty) = (true, true);
     let mut pending_sync = None;
     let mut frames = 0usize;
@@ -1227,17 +1316,10 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
                     if (i32::from(c.width), i32::from(c.height))
                         != (app.layout.w, app.layout.h) =>
                 {
-                    window.free_pixmaps()?;
-                    app.handle(
-                        Input::Resize {
-                            w: c.width.into(),
-                            h: c.height.into(),
-                        },
-                        now(),
-                    );
-                    window.make_pixmaps(&app.layout)?;
-                    plot_dirty = true;
-                    None
+                    Some(Input::Resize {
+                        w: c.width.into(),
+                        h: c.height.into(),
+                    })
                 }
                 Event::ButtonPress(b) => Some(Input::Press {
                     x: b.event_x.into(),
@@ -1265,7 +1347,28 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
                 _ => None,
             };
             if let Some(input) = input {
+                let relative = app.relative_energy;
+                let size = |l: &Layout| (l.w, l.h, l.plot);
+                let old_size = size(&app.layout);
+                let old_cursor = app.hover == Hover::Splitter;
                 dirty |= app.handle(input, now());
+                plot_dirty |= app.relative_energy != relative;
+                // Ventana redimensionada o borde de la gráfica arrastrado: pixmaps nuevos.
+                if size(&app.layout) != old_size {
+                    window.free_pixmaps()?;
+                    window.make_pixmaps(&app.layout)?;
+                    plot_dirty = true;
+                }
+                let on_splitter = app.hover == Hover::Splitter;
+                if on_splitter != old_cursor {
+                    let cursor = if on_splitter {
+                        resize_cursor
+                    } else {
+                        x11rb::NONE
+                    };
+                    let aux = ChangeWindowAttributesAux::new().cursor(cursor);
+                    conn.change_window_attributes(win, &aux)?;
+                }
             }
             event = conn.poll_for_event()?;
         }
