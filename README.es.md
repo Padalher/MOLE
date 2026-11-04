@@ -13,6 +13,7 @@
   <a href="https://pypi.org/project/mole-viewer/"><img src="https://img.shields.io/pypi/v/mole-viewer?label=PyPI" alt="PyPI"></a>
   <a href="https://github.com/Padalher/MOLE/actions/workflows/ci.yml"><img src="https://github.com/Padalher/MOLE/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/licencia-MIT-blue" alt="Licencia MIT"></a>
+  <a href="https://doi.org/10.5281/zenodo.23963301"><img src="https://zenodo.org/badge/DOI/10.5281/zenodo.23963301.svg" alt="DOI"></a>
 </p>
 
 <p align="center"><i><a href="README.md">English version</a></i></p>
@@ -46,6 +47,8 @@ mkdir -p ~/.local/bin && ln -sf ~/.local/mole-viewer/bin/mole ~/.local/bin/mole
 ```
 (`~/.local/bin` debe estar en tu `PATH`; si no, añade `export PATH="$HOME/.local/bin:$PATH"` a `~/.bashrc`.)
 
+**En Windows con WSL** (la terminal de Linux de Windows): abre la terminal de Linux e instala MOLE ahí con los comandos de Linux de arriba (`pip`, o el entorno virtual). En Windows 11, WSL ya trae servidor gráfico (WSLg), así que `mole archivo.xyz` abre la ventana directamente; en Windows 10 instala además [VcXsrv](https://github.com/marchaesen/vcxsrv) y define `DISPLAY`. Desde esa misma terminal también puedes conectarte a un clúster con `ssh -Y`.
+
 **Binario precompilado** (Linux x86_64, estático; funciona con cualquier glibc):
 ```bash
 curl -LO https://github.com/Padalher/MOLE/releases/latest/download/mole-x86_64-linux
@@ -72,9 +75,9 @@ Tu computadora necesita un servidor X para mostrar la ventana:
 |---|---|
 | Linux | incluido (X11 o Xwayland) |
 | macOS | [XQuartz](https://www.xquartz.org) (cierra sesión y vuelve a entrar tras instalarlo) |
-| Windows | [MobaXterm](https://mobaxterm.mobatek.net) (servidor X y cliente SSH en uno), o [VcXsrv](https://github.com/marchaesen/vcxsrv) con cualquier cliente SSH |
+| Windows | [MobaXterm](https://mobaxterm.mobatek.net) (servidor X y cliente SSH en uno), o [VcXsrv](https://github.com/marchaesen/vcxsrv) con cualquier cliente SSH; con WSL en Windows 11 no hace falta (WSLg) |
 
-MOLE también corre en local en Linux. En macOS y Windows corre en local a través de XQuartz o VcXsrv (en Windows, `set DISPLAY=localhost:0`), aunque esto todavía no se ha probado.
+MOLE también corre en local en Linux. En Windows corre en local a través de WSL (ver Instalación) o de VcXsrv (`set DISPLAY=localhost:0`), y en macOS a través de XQuartz; el uso en local en macOS y Windows todavía no se ha probado.
 
 ## Uso
 ```bash
@@ -112,7 +115,7 @@ El programa que generó el archivo se reconoce por su contenido, no por la exten
 Probado con archivos XYZ y con salidas de Gaussian 16 Rev. B.01 y de ORCA 6.1.
 
 ## Cómo citarlo
-Si usas MOLE en un trabajo publicado, por favor cítalo. Los datos están en [`CITATION.cff`](CITATION.cff), y el botón *Cite this repository* de GitHub los convierte a APA o BibTeX.
+Si usas MOLE en un trabajo publicado, por favor cítalo con su DOI, [10.5281/zenodo.23963301](https://doi.org/10.5281/zenodo.23963301) (Zenodo; siempre apunta a la última versión, y cada versión tiene además su propio DOI ahí). Los datos están en [`CITATION.cff`](CITATION.cff), y el botón *Cite this repository* de GitHub los convierte a APA o BibTeX.
 
 ## Autores
 - Pablo D. Alvarez-Hernandez: Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, México.
