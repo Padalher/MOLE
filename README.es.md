@@ -77,7 +77,7 @@ Tu computadora necesita un servidor X para mostrar la ventana:
 | macOS | [XQuartz](https://www.xquartz.org) (cierra sesión y vuelve a entrar tras instalarlo) |
 | Windows | [MobaXterm](https://mobaxterm.mobatek.net) (servidor X y cliente SSH en uno), o [VcXsrv](https://github.com/marchaesen/vcxsrv) con cualquier cliente SSH; con WSL en Windows 11 no hace falta (WSLg) |
 
-MOLE también corre en local en Linux. En Windows corre en local a través de WSL (ver Instalación) o de VcXsrv (`set DISPLAY=localhost:0`), y en macOS a través de XQuartz; el uso en local en macOS y Windows todavía no se ha probado.
+MOLE también corre en local en Linux y en macOS (a través de XQuartz). En Windows corre en local a través de WSL (ver Instalación) o de VcXsrv (`set DISPLAY=localhost:0`), aunque esto todavía no se ha probado.
 
 ## Uso
 ```bash
@@ -113,6 +113,8 @@ mole examples/water_opt_trj.xyz
 El programa que generó el archivo se reconoce por su contenido, no por la extensión. Las energías se muestran tal como se leen, sin convertir unidades. Por defecto la gráfica muestra energías relativas, E − Emin, en las mismas unidades, y escribe Emin encima; la casilla *E - Emin* la cambia a energías absolutas. La cabecera y el recuadro del puntero siempre muestran cada energía tal como se leyó. Las estructuras sin energía se pueden ver, pero no aparecen en la gráfica.
 
 Probado con archivos XYZ y con salidas de Gaussian 16 Rev. B.01 y de ORCA 6.1.
+
+**Previsto:** archivos cube de Gaussian (orbitales y densidades), mostrados como isosuperficies con los lóbulos positivo y negativo en rojo y azul, un valor de iso ajustable y transparencia opcional. Todavía no se pueden abrir archivos cube.
 
 ## Cómo citarlo
 Si usas MOLE en un trabajo publicado, por favor cítalo con su DOI, [10.5281/zenodo.23963301](https://doi.org/10.5281/zenodo.23963301) (Zenodo; siempre apunta a la última versión, y cada versión tiene además su propio DOI ahí). Los datos están en [`CITATION.cff`](CITATION.cff), y el botón *Cite this repository* de GitHub los convierte a APA o BibTeX.

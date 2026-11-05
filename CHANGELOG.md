@@ -1,6 +1,10 @@
 # Changelog
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
+## [Unreleased]
+### Changed
+- README: running locally on macOS (XQuartz) is tested; Gaussian cube files are listed as planned.
+
 ## [0.3.0] — 2026-11-04
 ### Changed
 - The controls are in a single column at the top right, next to the 3D view, one per row: the playback buttons are larger and labeled (First, Last, Play/Pause, Previous, Next), so the mouse travels less between the structure and the buttons. The 3D view and the E vs n plot share the rest of the window.

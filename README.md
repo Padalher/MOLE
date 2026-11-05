@@ -77,7 +77,7 @@ Your computer needs an X server to display the window:
 | macOS | [XQuartz](https://www.xquartz.org) (log out and back in after installing it) |
 | Windows | [MobaXterm](https://mobaxterm.mobatek.net) (X server and SSH client in one), or [VcXsrv](https://github.com/marchaesen/vcxsrv) with any SSH client; with WSL on Windows 11, none is needed (WSLg) |
 
-MOLE also runs locally on Linux. On Windows it runs locally through WSL (see Installation) or VcXsrv (`set DISPLAY=localhost:0`), and on macOS through XQuartz; running locally on macOS and Windows has not been tested yet.
+MOLE also runs locally on Linux and on macOS (through XQuartz). On Windows it runs locally through WSL (see Installation) or VcXsrv (`set DISPLAY=localhost:0`), although this has not been tested yet.
 
 ## Usage
 ```bash
@@ -111,6 +111,8 @@ mole examples/water_opt_trj.xyz
 The program is recognized by the file contents, not by the extension. Energies are shown as read, without unit conversion. By default the plot shows relative energies, E − Emin, in the same units, and writes Emin above it; the *E - Emin* checkbox switches it to absolute energies. The header and the tooltip always show each energy as read. Structures without an energy can be viewed, but they are not plotted.
 
 Tested with XYZ files, Gaussian 16 Rev. B.01 and ORCA 6.1 outputs.
+
+**Planned:** Gaussian cube files (orbitals and densities), shown as isosurfaces with the positive and negative lobes in red and blue, an adjustable isovalue and optional transparency. Cube files cannot be opened yet.
 
 ## Citation
 If you use MOLE in published work, please cite it with its DOI, [10.5281/zenodo.23963301](https://doi.org/10.5281/zenodo.23963301) (Zenodo; it always points to the latest version, and each version also has its own DOI there). The metadata are in [`CITATION.cff`](https://github.com/Padalher/MOLE/blob/main/CITATION.cff), and GitHub's *Cite this repository* button turns them into APA or BibTeX.
