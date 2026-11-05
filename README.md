@@ -77,7 +77,7 @@ Your computer needs an X server to display the window:
 | macOS | [XQuartz](https://www.xquartz.org) (log out and back in after installing it) |
 | Windows | [MobaXterm](https://mobaxterm.mobatek.net) (X server and SSH client in one), or [VcXsrv](https://github.com/marchaesen/vcxsrv) with any SSH client; with WSL on Windows 11, none is needed (WSLg) |
 
-MOLE also runs locally on Linux and on macOS (through XQuartz). On Windows it runs locally through WSL (see Installation) or VcXsrv (`set DISPLAY=localhost:0`), although this has not been tested yet.
+Tested on Linux, on macOS (XQuartz) and on Windows through WSL (see Installation), both locally and viewing an HPC cluster over ssh. Native Windows with VcXsrv (`set DISPLAY=localhost:0`) has not been tested yet.
 
 ## Usage
 ```bash

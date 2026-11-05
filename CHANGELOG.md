@@ -3,7 +3,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 
 ## [Unreleased]
 ### Changed
-- README: running locally on macOS (XQuartz) is tested; Gaussian cube files are listed as planned.
+- README: tested on Linux, macOS (XQuartz) and Windows through WSL, locally and over ssh; Gaussian cube files are listed as planned.
 
 ## [0.3.0] — 2026-11-04
 ### Changed
