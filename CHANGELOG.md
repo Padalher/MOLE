@@ -1,21 +1,20 @@
 # Changelog
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [Unreleased]
+## [0.3.1] — 2026-11-16
 ### Added
 - Gaussian cube files (`.cube`, `.cub`): atoms and isosurfaces, with the positive lobe in red and the negative one in blue, an isovalue control and an optional *Transparent* mode. Several cube files can be browsed like structures. Multi-orbital files show the first data set, with a warning.
+- Extended XYZ: the numeric per-atom columns named in `Properties=` are read; hovering over an atom shows their values, and a `forces:R:3` column is drawn as one arrow per atom (scaled per structure; *Arrows* checkbox).
 - White theme: *Light theme* checkbox and `--light`.
-- The controls column can be widened by dragging its left edge.
-- Extended XYZ: the numeric per-atom columns named in `Properties=` are read; hovering over an atom shows their values, and a `forces:R:3` column is drawn as arrows (scaled per structure, *Arrows* checkbox).
+- Command-line options for every control: `--frame N`, `--absolute`, `--fix-orientation`, `--tol T`, `--no-mm`, `--iso V`, `--transparent` and `--no-forces` (see `mole --help`).
+- Contact addresses of the authors in the README, `CITATION.cff` and the package metadata; questions about the software: contact@padalher.com.
 
 ### Changed
-- The controls column is grouped under titles: Playback, Bonds, Surface (cube files), Forces (files with forces), View and Plot.
-- New command-line options for every control: `--frame N`, `--absolute`, `--fix-orientation`, `--tol T`, `--no-mm`, `--iso V`, `--transparent` and `--no-forces` (see `mole --help`).
-- README, `CITATION.cff` and package description: MOLE is described by the files it opens, not by particular kinds of calculation.
-- Contact addresses of the authors in the README, `CITATION.cff` and the package metadata; questions about the software: contact@padalher.com.
-- README: tested on Linux, macOS (XQuartz) and Windows through WSL, locally and over ssh.
-- With fewer than two energies, the E vs n plot opens at its minimum height; a single energy no longer gives an axis of 10^-9 steps.
+- The controls column is grouped under titles: Playback, Bonds, Surface (cube files), Forces (files with forces), View and Plot. It can be widened by dragging its left edge.
 - Very small energy differences: the axis moves the power of ten to its label (`E - Emin (×10^-6)`) and the tooltip uses exponents (`1.23e-6`) instead of `0.000001`.
+- With fewer than two energies, the E vs n plot opens at its minimum height; a single energy no longer gives an axis of 10^-9 steps.
+- README, `CITATION.cff` and package description: MOLE is described by the files it opens (XYZ, Gaussian and ORCA outputs, cube files).
+- README: tested on Linux, macOS (XQuartz) and Windows through WSL, locally and over ssh.
 
 ## [0.3.0] — 2026-11-04
 ### Changed

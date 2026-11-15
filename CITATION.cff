@@ -1,9 +1,9 @@
 cff-version: 1.2.0
 message: "If you use MOLE in published work, please cite it as below."
 type: software
-title: "MOLE: a lightweight viewer for ensembles of molecular structures with an interactive E vs n plot"
-version: 0.3.0
-date-released: 2026-11-04
+title: "MOLE: a lightweight molecular viewer with an interactive E vs n plot"
+version: 0.3.1
+date-released: 2026-11-16
 doi: 10.5281/zenodo.23963301
 license: MIT
 repository-code: "https://github.com/Padalher/MOLE"
@@ -14,6 +14,8 @@ keywords:
   - XYZ
   - ORCA
   - Gaussian
+  - cube files
+  - extended XYZ
   - X11
 authors:
   - given-names: Pablo D.
