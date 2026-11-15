@@ -1,6 +1,6 @@
-//! Lectura de estructuras y energías (XYZ, salidas de Gaussian y ORCA). Sin gráficos.
 #![forbid(unsafe_code)]
 
+pub mod cube;
 pub mod elements;
 pub mod gaussian;
 pub mod orca;
@@ -9,44 +9,46 @@ pub mod xyz;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-/// Tamaño máximo de archivo que se lee.
-// ponytail: límite fijo; hacerlo configurable si aparecen salidas mayores.
 pub const MAX_FILE_BYTES: u64 = 1 << 30;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Atom {
     pub z: u8,
-    /// Posición en Å.
     pub pos: [f64; 3],
 }
 
-/// De dónde salió la energía de una estructura.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnergySource {
-    /// Línea de comentario de un XYZ (unidad desconocida; en GLOMOS, kcal/mol).
     XyzComment,
-    /// Última `SCF Done` de una salida de Gaussian (Hartree).
     GaussianScf,
-    /// Última `FINAL SINGLE POINT ENERGY` de una salida de ORCA (Hartree).
     OrcaFinal,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Structure {
     pub atoms: Vec<Atom>,
-    /// Energía tal como se leyó; `None` si no consta (nunca se inventa).
     pub energy: Option<f64>,
     pub energy_source: Option<EnergySource>,
-    /// Etiqueta (p. ej. `stage200001`, `3a` o el nombre del archivo).
     pub label: String,
     pub comment: String,
     pub path: PathBuf,
-    /// Línea (1-based) donde empieza la estructura en `path`.
     pub line: usize,
+    pub columns: Vec<Column>,
+    pub grid: Option<Box<cube::Grid>>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Column {
+    pub name: String,
+    pub width: usize,
+    pub values: Vec<f64>,
 }
 
 impl Structure {
-    /// Fórmula en orden de Hill (C, H y luego alfabético; alfabético si no hay C).
+    pub fn column(&self, name: &str) -> Option<&Column> {
+        self.columns.iter().find(|c| c.name == name)
+    }
+
     pub fn formula(&self) -> String {
         let mut counts = [0usize; 119];
         for a in &self.atoms {
@@ -74,14 +76,8 @@ impl Structure {
     }
 }
 
-/// Tolerancia por defecto de [`bonds`]. En los óxidos Ti/Al de GLOMOS, los enlaces M–O quedan por
-/// debajo de 1.2 × (r₁ + r₂) y los pares no enlazados por encima de 1.3.
 pub const DEFAULT_BOND_TOLERANCE: f64 = 1.25;
 
-/// Pares de átomos enlazados: distancia < `tolerance` × (r₁ + r₂), con radios covalentes.
-/// Si `metal_metal` es falso se omiten los pares metal–metal: en óxidos, las distancias entre
-/// cationes son tan cortas como los enlaces M–O y no se distinguen por distancia.
-// ponytail: O(n²); usar una rejilla espacial si se ven estructuras de miles de átomos.
 pub fn bonds(atoms: &[Atom], tolerance: f64, metal_metal: bool) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     for (i, a) in atoms.iter().enumerate() {
@@ -101,11 +97,8 @@ pub fn bonds(atoms: &[Atom], tolerance: f64, metal_metal: bool) -> Vec<(usize, u
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorKind {
-    /// No se pudo leer el archivo (código de salida 3).
     Io,
-    /// Contenido inválido (código de salida 4).
     Parse,
-    /// Formato no soportado (código de salida 5).
     Unsupported,
 }
 
@@ -139,17 +132,13 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
-/// Resultado de cargar varios archivos.
 #[derive(Debug, Default)]
 pub struct Loaded {
     pub structures: Vec<Structure>,
-    /// Avisos para el usuario (datos ausentes, archivos omitidos, mezclas de unidades…).
     pub warnings: Vec<String>,
-    /// Archivos que no se pudieron leer; el resto se carga igualmente.
     pub errors: Vec<Error>,
 }
 
-/// Lee un archivo completo respetando `MAX_FILE_BYTES`.
 pub fn read_file(path: &Path) -> Result<String, Error> {
     let io = |msg: String| Error {
         kind: ErrorKind::Io,
@@ -175,7 +164,6 @@ fn is_output_ext(path: &Path) -> bool {
         .is_some_and(|e| e.eq_ignore_ascii_case("out") || e.eq_ignore_ascii_case("log"))
 }
 
-/// Salida de un programa de química cuántica: ORCA si lo indica la cabecera; si no, Gaussian.
 pub fn parse_output(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error> {
     if orca::is_orca(text) {
         orca::parse(text, path)
@@ -184,7 +172,6 @@ pub fn parse_output(text: &str, path: &Path) -> Result<(Structure, Vec<String>),
     }
 }
 
-/// Carga un archivo según su extensión: `.xyz` → XYZ; `.out`/`.log` → salida de Gaussian u ORCA.
 fn load_one(path: &Path, out: &mut Loaded) -> Result<(), Error> {
     let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
     if ext.eq_ignore_ascii_case("xyz") {
@@ -192,6 +179,10 @@ fn load_one(path: &Path, out: &mut Loaded) -> Result<(), Error> {
         let mut frames = xyz::parse(&text, path)?;
         fill_energies_from_outputs(path, &mut frames, &mut out.warnings);
         out.structures.extend(frames);
+    } else if ext.eq_ignore_ascii_case("cube") || ext.eq_ignore_ascii_case("cub") {
+        let (s, warnings) = cube::parse(&read_file(path)?, path)?;
+        out.warnings.extend(warnings);
+        out.structures.push(s);
     } else if is_output_ext(path) {
         let text = read_file(path)?;
         let (s, warnings) = parse_output(&text, path)?;
@@ -202,14 +193,13 @@ fn load_one(path: &Path, out: &mut Loaded) -> Result<(), Error> {
             kind: ErrorKind::Unsupported,
             path: path.to_path_buf(),
             line: None,
-            msg: "unsupported extension (accepted: .xyz, and .out/.log from Gaussian or ORCA)"
+            msg: "unsupported extension (accepted: .xyz, .cube/.cub, and .out/.log from Gaussian or ORCA)"
                 .into(),
         });
     }
     Ok(())
 }
 
-/// Carga varios archivos en orden. Un archivo con errores se omite y se informa; el resto se carga.
 pub fn load(paths: &[PathBuf]) -> Loaded {
     let mut out = Loaded::default();
     for path in paths {
@@ -218,7 +208,8 @@ pub fn load(paths: &[PathBuf]) -> Loaded {
             out.errors.push(e);
         }
     }
-    let missing = out.structures.iter().filter(|s| s.energy.is_none()).count();
+    let plain = out.structures.iter().filter(|s| s.grid.is_none());
+    let missing = plain.filter(|s| s.energy.is_none()).count();
     if missing > 0 {
         out.warnings.push(format!(
             "{missing} of {} structures have no energy: they can be browsed but are not plotted",
@@ -237,9 +228,6 @@ pub fn load(paths: &[PathBuf]) -> Loaded {
     out
 }
 
-/// Si **ninguna** estructura de un XYZ trae energía, la toma de la salida (Gaussian u ORCA) asociada a
-/// cada etiqueta: un `.out`/`.log` del mismo directorio cuyo nombre sea `<etiqueta>` o termine en
-/// `_<etiqueta>`. No se rellena si solo faltan algunas, para no mezclar unidades.
 fn fill_energies_from_outputs(
     xyz_path: &Path,
     frames: &mut [Structure],
@@ -279,8 +267,6 @@ fn fill_energies_from_outputs(
     }
 }
 
-/// Prueba de entrada hostil: aplica `n` mutaciones aleatorias (deterministas) a `base` y llama a
-/// `f` con cada resultado; `f` no debe entrar en pánico.
 #[cfg(test)]
 fn mutations(base: &str, n: usize, mut f: impl FnMut(&str)) {
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -322,11 +308,9 @@ mod tests {
 
     #[test]
     fn bonds_by_covalent_radii() {
-        // O–H a 0.96 Å enlazados; H–H a 1.9 Å no.
         let atoms = [atom(8, 0.0), atom(1, 0.96), atom(1, -0.96)];
         assert_eq!(bonds(&atoms, 1.15, false), vec![(0, 1), (0, 2)]);
         assert!(bonds(&atoms, 0.5, false).is_empty());
-        // Ti–Ti a 2.7 Å: solo si se piden enlaces metal–metal.
         let ti = [atom(22, 0.0), atom(22, 2.7)];
         assert!(bonds(&ti, DEFAULT_BOND_TOLERANCE, false).is_empty());
         assert_eq!(bonds(&ti, DEFAULT_BOND_TOLERANCE, true), vec![(0, 1)]);
@@ -342,6 +326,8 @@ mod tests {
             comment: String::new(),
             path: PathBuf::new(),
             line: 1,
+            columns: Vec::new(),
+            grid: None,
         };
         assert_eq!(s(&[8, 1, 1]).formula(), "H2O");
         assert_eq!(s(&[8, 6, 1, 1, 1, 1]).formula(), "CH4O");

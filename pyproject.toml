@@ -1,18 +1,16 @@
-# Packages the `mole` executable as a Python wheel (maturin, bindings = "bin"): `pip install mole-viewer`
-# puts `mole` on the environment's PATH. There is no Python code.
 [build-system]
 requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"
 
 [project]
 name = "mole-viewer"
-description = "Lightweight viewer for ensembles of molecular structures with an interactive E vs n plot, fast over SSH/X11"
+description = "Lightweight molecular viewer for XYZ, Gaussian, ORCA and cube files, with an interactive E vs n plot; fluid over SSH/X11"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [
-    { name = "Pablo D. Alvarez-Hernandez" },
-    { name = "Filiberto Ortiz Chi" },
+    { name = "Pablo D. Alvarez-Hernandez", email = "pablo.alvarez@padalher.com" },
+    { name = "Filiberto Ortiz Chi", email = "filiberto.ortiz@cinvestav.mx" },
 ]
 requires-python = ">=3.8"
 keywords = ["chemistry", "computational-chemistry", "molecular-visualization", "xyz", "orca", "gaussian", "x11"]

@@ -1,7 +1,6 @@
 use mole_core::{EnergySource, load};
 use std::path::PathBuf;
 
-/// Ejemplo incluido en el repositorio (ORCA 6.1.1, `examples/water_opt.inp`).
 #[test]
 fn water_example() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/water_opt_trj.xyz");
@@ -13,7 +12,6 @@ fn water_example() {
     assert_eq!(l.structures[8].formula(), "H2O");
 }
 
-/// Archivos reales propios (no versionados): `MOLE_SAMPLES=/ruta/a/ejemplos cargo test`.
 #[test]
 fn real_samples() {
     let Ok(dir) = std::env::var("MOLE_SAMPLES") else {

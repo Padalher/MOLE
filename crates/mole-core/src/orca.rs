@@ -1,20 +1,13 @@
-//! Salidas de ORCA (`.out`/`.log`): última geometría y su `FINAL SINGLE POINT ENERGY`.
-//!
-//! Probado con ORCA 6.1.0. Otras versiones no se declaran soportadas.
-
 use crate::{Atom, EnergySource, Error, Structure, elements};
 use std::path::Path;
 
 const GEOMETRY: &str = "CARTESIAN COORDINATES (ANGSTROEM)";
 const ENERGY: &str = "FINAL SINGLE POINT ENERGY";
 
-/// ¿Es una salida de ORCA? (cabecera `* O   R   C   A *` al principio).
 pub fn is_orca(text: &str) -> bool {
     text.lines().take(100).any(|l| l.contains("O   R   C   A"))
 }
 
-/// Tabla tras `CARTESIAN COORDINATES (ANGSTROEM)`: una línea de guiones y filas `símbolo x y z`
-/// hasta una línea en blanco.
 fn parse_geometry(
     lines: &[&str],
     start: usize,
@@ -42,7 +35,6 @@ fn parse_geometry(
         }
         match elements::parse_element(toks[0]) {
             Some(z) => atoms.push(Atom { z, pos }),
-            // Átomos ficticios (DA) o cargas puntuales (Q): no se dibujan, pero se avisa.
             None => warnings.push(format!(
                 "{}:{lineno}: center '{}' skipped (not an element)",
                 path.display(),
@@ -57,8 +49,6 @@ fn parse_geometry(
     ))
 }
 
-/// Lee la última geometría y la última `FINAL SINGLE POINT ENERGY` que la sigue (la energía de una
-/// geometría anterior no se asigna a la última). Devuelve también avisos.
 pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error> {
     let lines: Vec<&str> = text.lines().collect();
     let mut warnings = Vec::new();
@@ -68,7 +58,6 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
             last_geom = Some(i);
             energy = None;
         } else if let Some(rest) = line.trim_start().strip_prefix(ENERGY) {
-            // "FINAL SINGLE POINT ENERGY     -1710.170750050696"
             energy = rest.trim().parse::<f64>().ok().filter(|v| v.is_finite());
             if energy.is_none() {
                 warnings.push(format!(
@@ -115,6 +104,8 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
         label,
         path: path.to_path_buf(),
         line: start + 1,
+        columns: Vec::new(),
+        grid: None,
     };
     Ok((structure, warnings))
 }
@@ -123,7 +114,6 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
 mod tests {
     use super::*;
 
-    /// Extracto con el formato de ORCA 6.1 (optimización de H2O generada para este proyecto).
     const SAMPLE: &str = "
                                  *****************
                                  * O   R   C   A *
@@ -175,23 +165,19 @@ FINAL SINGLE POINT ENERGY       -74.965901191476
 
     #[test]
     fn incomplete_outputs() {
-        // Cortado tras la última geometría: no se le asigna la energía de la anterior.
         let cut = SAMPLE.rsplit_once("FINAL SINGLE").unwrap().0;
         let (s, w) = p(cut).unwrap();
         assert_eq!(s.energy, None);
         assert!(w.iter().any(|w| w.contains("has no")));
         assert!(w.iter().any(|w| w.contains("did not terminate normally")));
-        // Tabla truncada.
         let trunc: String = SAMPLE.lines().take(9).collect::<Vec<_>>().join("\n");
         assert!(p(&trunc).unwrap_err().msg.contains("unterminated"));
-        // Sin geometría.
         assert!(
             p("* O   R   C   A *\n")
                 .unwrap_err()
                 .msg
                 .contains("geometry")
         );
-        // Fila corrupta en la última geometría.
         let bad = SAMPLE.replace("0.758105   -0.471927", "0.75x   -0.471927");
         assert!(p(&bad).unwrap_err().msg.contains("row"));
     }

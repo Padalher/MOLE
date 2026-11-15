@@ -7,6 +7,7 @@ date-released: 2026-11-04
 doi: 10.5281/zenodo.23963301
 license: MIT
 repository-code: "https://github.com/Padalher/MOLE"
+abstract: "MOLE is a lightweight molecular viewer for XYZ files with one or more structures, Gaussian and ORCA output files and cube files. It shows the 3D structure next to an interactive E vs n energy plot and playback controls. It draws with the core X11 protocol, so it stays fluid when run on an HPC cluster and viewed over ssh -Y."
 keywords:
   - computational chemistry
   - molecular visualization
@@ -18,6 +19,8 @@ authors:
   - given-names: Pablo D.
     family-names: Alvarez-Hernandez
     affiliation: "Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, Mexico"
+    email: pablo.alvarez@padalher.com
   - given-names: Filiberto
     family-names: Ortiz Chi
     affiliation: "Cinvestav Unidad Mérida, TheoChem Mérida, Mexico"
+    email: filiberto.ortiz@cinvestav.mx

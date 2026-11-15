@@ -1,5 +1,3 @@
-# cargo-deny configuration: permissive licenses only.
-
 [licenses]
 allow = ["MIT", "Apache-2.0"]
 

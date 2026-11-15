@@ -1,6 +1,4 @@
-//! Estado del visor, distribución de la ventana y respuesta al ratón y al teclado. Sin X11: todo lo
-//! de aquí se prueba sin pantalla; `x11.rs` solo traduce eventos y dibuja.
-
+use mole_core::cube::Face;
 use mole_core::{DEFAULT_BOND_TOLERANCE, Loaded, Structure, bonds, elements};
 
 type Mat3 = [[f64; 3]; 3];
@@ -21,7 +19,6 @@ fn apply(m: &Mat3, v: [f64; 3]) -> [f64; 3] {
     [0, 1, 2].map(|i| m[i][0] * v[0] + m[i][1] * v[1] + m[i][2] * v[2])
 }
 
-/// Rotación de `ax` rad alrededor del eje x de la pantalla y `ay` alrededor del eje y.
 fn rotation(ax: f64, ay: f64) -> Mat3 {
     let (sx, cx) = ax.sin_cos();
     let (sy, cy) = ay.sin_cos();
@@ -47,7 +44,6 @@ fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     ]
 }
 
-/// Valores y vectores propios (en columnas) de una matriz simétrica, por Jacobi cíclico.
 fn sym_eigen<const N: usize>(mut a: [[f64; N]; N]) -> ([f64; N], [[f64; N]; N]) {
     let mut v: [[f64; N]; N] = std::array::from_fn(|i| std::array::from_fn(|j| f64::from(i == j)));
     for _ in 0..60 {
@@ -84,7 +80,6 @@ fn sym_eigen<const N: usize>(mut a: [[f64; N]; N]) -> ([f64; N], [[f64; N]; N]) 
     (std::array::from_fn(|i| a[i][i]), v)
 }
 
-/// Posiciones respecto al centroide (el mismo centro que usa la vista 3D).
 fn centered(s: &Structure) -> Vec<[f64; 3]> {
     let n = s.atoms.len().max(1) as f64;
     let c = [0, 1, 2].map(|k| s.atoms.iter().map(|a| a.pos[k]).sum::<f64>() / n);
@@ -94,8 +89,6 @@ fn centered(s: &Structure) -> Vec<[f64; 3]> {
         .collect()
 }
 
-/// Rotación que superpone `p` sobre `q` átomo por átomo con el mínimo RMSD (método de Horn, con
-/// cuaterniones: siempre una rotación propia).
 fn superpose(p: &[[f64; 3]], q: &[[f64; 3]]) -> Mat3 {
     let mut s = [[0.0; 3]; 3];
     for (a, b) in p.iter().zip(q) {
@@ -135,11 +128,6 @@ fn superpose(p: &[[f64; 3]], q: &[[f64; 3]]) -> Mat3 {
     ]
 }
 
-/// Ejes principales de la distribución de átomos (pesados por Z), en filas y de mayor a menor
-/// dispersión: `apply(&e, r)` da r en ese marco. El signo de cada eje lo fija el tercer momento y
-/// la base es dextrógira.
-// ponytail: en cúmulos casi simétricos (ejes degenerados o tercer momento ~0) la orientación puede
-// saltar entre isómeros parecidos; superponer por permutación de átomos lo resolvería.
 fn principal_axes(s: &Structure) -> Mat3 {
     let p = centered(s);
     let w: Vec<f64> = s.atoms.iter().map(|a| f64::from(a.z)).collect();
@@ -169,13 +157,6 @@ fn principal_axes(s: &Structure) -> Mat3 {
     e
 }
 
-/// Rotación que lleva `s` a la orientación de la referencia `r`. Candidatas: la superposición
-/// átomo por átomo (si tienen los mismos elementos en el mismo orden) y las cuatro orientaciones
-/// por ejes principales; gana la que deja cada átomo más cerca de uno del mismo elemento de la
-/// referencia. Así una trayectoria se superpone exacta y un isómero, cuyos índices de átomo no se
-/// corresponden, se orienta como el que más se le parece.
-// ponytail: comparar con cada átomo de la referencia es O(n²) por candidata; con miles de
-// estructuras de cientos de átomos, usar una rejilla de vecinos.
 fn orientation_to(s: &Structure, r: &Structure) -> Mat3 {
     let (p, q) = (centered(s), centered(r));
     let (es, er) = (principal_axes(s), principal_axes(r));
@@ -189,7 +170,6 @@ fn orientation_to(s: &Structure, r: &Structure) -> Mat3 {
     if s.atoms.len() == r.atoms.len() && s.atoms.iter().zip(&r.atoms).all(|(a, b)| a.z == b.z) {
         candidates.push(superpose(&p, &q));
     }
-    // Distancia² de cada átomo al más cercano de la referencia (otro elemento: penalizado).
     let mismatch = |m: &Mat3| -> f64 {
         p.iter()
             .zip(&s.atoms)
@@ -212,18 +192,15 @@ fn orientation_to(s: &Structure, r: &Structure) -> Mat3 {
         .map_or(IDENTITY, |(_, m)| m)
 }
 
-/// Navegación y reproducción.
 pub struct Player {
     pub len: usize,
     pub current: usize,
     pub playing: bool,
     pub looping: bool,
-    /// Estructuras por segundo.
     pub speed: f64,
     last_step: f64,
 }
 
-/// Velocidades que recorren los botones − y +.
 pub const SPEEDS: [f64; 9] = [0.5, 1.0, 2.0, 4.0, 8.0, 15.0, 30.0, 60.0, 120.0];
 
 impl Player {
@@ -262,13 +239,11 @@ impl Player {
     pub fn toggle(&mut self, now: f64) {
         self.playing = !self.playing;
         self.last_step = now;
-        // Reproducir desde el final sin repetición vuelve a empezar.
         if self.playing && !self.looping && self.current + 1 == self.len {
             self.current = 0;
         }
     }
 
-    /// Avanza si toca; devuelve los segundos hasta el siguiente paso.
     pub fn tick(&mut self, now: f64) -> Option<f64> {
         if !self.playing || self.len < 2 {
             return None;
@@ -293,7 +268,6 @@ impl Player {
     }
 }
 
-/// Índice de la estructura con energía más cercana a `x` (eje n, 1-based).
 pub fn nearest_with_energy(structures: &[Structure], x: f64) -> Option<usize> {
     structures
         .iter()
@@ -336,18 +310,22 @@ pub enum Button {
     Smooth,
     RelativeEnergy,
     FixOrientation,
+    Light,
+    LessIso,
+    MoreIso,
+    Transparent,
+    Forces,
 }
 
-/// Elemento de la barra de controles: botón o texto (con su ancho fijo en caracteres).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum BarItem {
     Button(Button),
     Speed,
     Tolerance,
+    Iso,
+    Title(&'static str),
 }
 
-/// Rectángulos de cada zona y de cada control; dependen solo del tamaño de la ventana y de la
-/// fuente (monoespaciada), no del estado.
 #[derive(Debug, Clone, Default)]
 pub struct Layout {
     pub w: i32,
@@ -357,13 +335,25 @@ pub struct Layout {
     pub header: Rect,
     pub view: Rect,
     pub plot: Rect,
-    /// Columna de controles a la derecha, junto a la vista (menos recorrido del ratón entre la
-    /// figura y los botones).
     pub panel: Rect,
     pub items: Vec<(BarItem, Rect)>,
+    pub panes: Panes,
 }
 
-/// Textos de ancho fijo de la columna de controles (el valor cambia, el ancho no).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Panes {
+    pub plot_h: Option<i32>,
+    pub panel_w: Option<i32>,
+    pub cube: bool,
+    pub forces: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edge {
+    Plot,
+    Panel,
+}
+
 pub fn speed_text(speed: f64) -> String {
     format!("{speed:>3} struct/s")
 }
@@ -372,12 +362,17 @@ pub fn tolerance_text(t: f64) -> String {
     format!("tol {t:.2}")
 }
 
-/// Etiqueta de la casilla de enlaces metal–metal.
 pub const METAL_METAL_LABEL: &str = "M-M bonds";
 pub const RELATIVE_ENERGY_LABEL: &str = "E - Emin";
 pub const FIX_ORIENTATION_LABEL: &str = "Fix orientation";
+pub const LIGHT_LABEL: &str = "Light theme";
+pub const TRANSPARENT_LABEL: &str = "Transparent";
+pub const FORCES_LABEL: &str = "Arrows";
 
-/// Nombre de un botón de reproducción, junto a su icono.
+pub fn iso_text(iso: f64) -> String {
+    format!("iso {iso:.4}")
+}
+
 pub fn playback_label(b: Button, playing: bool) -> Option<&'static str> {
     Some(match b {
         Button::First => "First",
@@ -391,28 +386,25 @@ pub fn playback_label(b: Button, playing: bool) -> Option<&'static str> {
 }
 const PLAYBACK_LABEL_MAX: i32 = "Previous".len() as i32;
 
-/// Altura mínima de la gráfica y de la vista 3D al arrastrar el borde entre ambas.
 const MIN_PANE_H: i32 = 80;
 
 impl Layout {
     pub fn new(w: i32, h: i32, char_w: i32, line_h: i32) -> Self {
-        Self::with_plot_h(w, h, char_w, line_h, (h / 3).clamp(120, 280))
+        Self::with_panes(w, h, char_w, line_h, Panes::default())
     }
 
-    /// Como `new`, con la altura de la gráfica elegida por el usuario (limitada a la ventana).
-    pub fn with_plot_h(w: i32, h: i32, char_w: i32, line_h: i32, plot_h: i32) -> Self {
+    pub fn with_panes(w: i32, h: i32, char_w: i32, line_h: i32, panes: Panes) -> Self {
         let header = Rect {
             x: 0,
             y: 0,
             w,
             h: line_h + 10,
         };
-        // Una sola columna, un control por fila, botones grandes (`bh` de alto). Los de
-        // reproducción llevan icono + nombre, así que la columna cabe su nombre más largo.
         let (bh, gap, pad) = ((2 * line_h + 4).max(34), 4, 6);
         let text_w = char_w * speed_text(0.0).len() as i32 + 4;
         let inner = (2 * bh + 2 * gap + text_w).max(bh + char_w * (PLAYBACK_LABEL_MAX + 2));
-        let panel_w = (inner + 2 * pad).min(w);
+        let min_panel = inner + 2 * pad;
+        let panel_w = panes.panel_w.unwrap_or(0).min(w / 2).max(min_panel).min(w);
         let panel = Rect {
             x: w - panel_w,
             y: header.h,
@@ -420,6 +412,7 @@ impl Layout {
             h: (h - header.h).max(0),
         };
         let left = w - panel_w;
+        let plot_h = panes.plot_h.unwrap_or((h / 3).clamp(120, 280));
         let plot_h = plot_h.min(h - header.h - MIN_PANE_H).max(MIN_PANE_H);
         let plot = Rect {
             x: 0,
@@ -435,38 +428,78 @@ impl Layout {
         };
         let (x0, x1) = (panel.x + pad, panel.x + panel_w - pad);
         let value_w = x1 - x0 - 2 * (bh + gap);
-        let mut items = Vec::new();
-        let mut put = |item, x: i32, w: i32, y: i32| items.push((item, Rect { x, y, w, h: bh }));
-        let mut y = panel.y + pad;
-        for b in [
-            Button::First,
-            Button::Last,
-            Button::Play,
-            Button::Prev,
-            Button::Next,
-        ] {
-            put(BarItem::Button(b), x0, x1 - x0, y);
-            y += bh + gap;
+        enum Row {
+            Full(Button),
+            Step(Button, BarItem, Button),
         }
-        // Filas [−] valor [+] y casillas de todo el ancho; más hueco entre grupos.
-        y += 10;
-        put(BarItem::Button(Button::Slower), x0, bh, y);
-        put(BarItem::Speed, x0 + bh + gap, value_w, y);
-        put(BarItem::Button(Button::Faster), x1 - bh, bh, y);
-        y += bh + 4;
-        put(BarItem::Button(Button::Loop), x0, x1 - x0, y);
-        y += bh + 14;
-        put(BarItem::Button(Button::LessTolerance), x0, bh, y);
-        put(BarItem::Tolerance, x0 + bh + gap, value_w, y);
-        put(BarItem::Button(Button::MoreTolerance), x1 - bh, bh, y);
-        for b in [
-            Button::FixOrientation,
-            Button::MetalMetal,
-            Button::Smooth,
-            Button::RelativeEnergy,
-        ] {
-            y += bh + 4;
-            put(BarItem::Button(b), x0, x1 - x0, y);
+        use Row::{Full, Step};
+        let mut groups = vec![
+            (
+                "PLAYBACK",
+                vec![
+                    Full(Button::First),
+                    Full(Button::Last),
+                    Full(Button::Play),
+                    Full(Button::Prev),
+                    Full(Button::Next),
+                    Step(Button::Slower, BarItem::Speed, Button::Faster),
+                    Full(Button::Loop),
+                ],
+            ),
+            (
+                "BONDS",
+                vec![
+                    Step(
+                        Button::LessTolerance,
+                        BarItem::Tolerance,
+                        Button::MoreTolerance,
+                    ),
+                    Full(Button::MetalMetal),
+                ],
+            ),
+        ];
+        if panes.cube {
+            groups.push((
+                "SURFACE",
+                vec![
+                    Step(Button::LessIso, BarItem::Iso, Button::MoreIso),
+                    Full(Button::Transparent),
+                ],
+            ));
+        }
+        if panes.forces {
+            groups.push(("FORCES", vec![Full(Button::Forces)]));
+        }
+        groups.push((
+            "VIEW",
+            vec![
+                Full(Button::FixOrientation),
+                Full(Button::Smooth),
+                Full(Button::Light),
+            ],
+        ));
+        groups.push(("PLOT", vec![Full(Button::RelativeEnergy)]));
+        let mut items = Vec::new();
+        let mut put =
+            |item, x: i32, w: i32, y: i32, h: i32| items.push((item, Rect { x, y, w, h }));
+        let mut y = panel.y + pad;
+        for (k, (name, rows)) in groups.into_iter().enumerate() {
+            if k > 0 {
+                y += 8;
+            }
+            put(BarItem::Title(name), x0, x1 - x0, y, line_h);
+            y += line_h + 2;
+            for row in rows {
+                match row {
+                    Full(b) => put(BarItem::Button(b), x0, x1 - x0, y, bh),
+                    Step(less, value, more) => {
+                        put(BarItem::Button(less), x0, bh, y, bh);
+                        put(value, x0 + bh + gap, value_w, y, bh);
+                        put(BarItem::Button(more), x1 - bh, bh, y, bh);
+                    }
+                }
+                y += bh + gap;
+            }
         }
         Layout {
             w,
@@ -478,12 +511,23 @@ impl Layout {
             plot,
             panel,
             items,
+            panes: Panes {
+                plot_h: panes.plot_h.map(|_| plot_h),
+                panel_w: panes.panel_w.map(|_| panel_w),
+                cube: panes.cube,
+                forces: panes.forces,
+            },
         }
     }
 
-    /// Borde entre la vista 3D y la gráfica: arrastrarlo cambia la altura de la gráfica.
-    pub fn on_splitter(&self, x: i32, y: i32) -> bool {
-        x < self.plot.w && (y - self.plot.y).abs() <= 4
+    pub fn edge_at(&self, x: i32, y: i32) -> Option<Edge> {
+        if y > self.header.h && (x - self.panel.x).abs() <= 3 {
+            Some(Edge::Panel)
+        } else if x < self.plot.w && (y - self.plot.y).abs() <= 4 {
+            Some(Edge::Plot)
+        } else {
+            None
+        }
     }
 
     pub fn button_at(&self, x: i32, y: i32) -> Option<Button> {
@@ -494,13 +538,11 @@ impl Layout {
     }
 }
 
-/// Transformación de la gráfica E vs n: área de dibujo y rangos (con margen).
 #[derive(Debug, Clone, Copy)]
 pub struct PlotMap {
     pub area: Rect,
     pub n: (f64, f64),
     pub e: (f64, f64),
-    /// Energía de referencia (la mínima) cuando el eje muestra E − Emin.
     pub e_ref: Option<f64>,
 }
 
@@ -521,7 +563,6 @@ impl PlotMap {
     }
 }
 
-/// Marcas "bonitas" (1, 2 o 5 × 10ᵏ) entre `lo` y `hi`, como mucho unas `max` marcas.
 pub fn nice_ticks(lo: f64, hi: f64, max: usize) -> (Vec<f64>, f64) {
     let span = (hi - lo).abs().max(1e-12);
     let raw = span / max.max(1) as f64;
@@ -536,10 +577,27 @@ pub fn nice_ticks(lo: f64, hi: f64, max: usize) -> (Vec<f64>, f64) {
     ((first..=last).map(|k| k as f64 * step).collect(), step)
 }
 
-/// Texto de una marca con los decimales justos para el paso.
 pub fn tick_text(v: f64, step: f64) -> String {
     let decimals = (-step.log10().floor()).max(0.0) as usize;
     format!("{v:.decimals$}")
+}
+
+pub fn tick_exponent(ticks: &[f64], step: f64) -> i32 {
+    let k = step.log10().floor() as i32;
+    let big = ticks.iter().fold(0.0f64, |m, t| m.max(t.abs()));
+    if k >= -3 || big / 10f64.powi(k) >= 1e5 {
+        0
+    } else {
+        k
+    }
+}
+
+pub fn short_number(v: f64) -> String {
+    if v != 0.0 && v.abs() < 1e-3 {
+        return format!("{v:.2e}");
+    }
+    let s = format!("{v:.6}");
+    s.trim_end_matches('0').trim_end_matches('.').to_string()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -549,7 +607,7 @@ pub enum Hover {
     Atom(usize),
     Plot(usize),
     Button(Button),
-    Splitter,
+    Edge(Edge),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -562,8 +620,6 @@ pub enum Key {
     Quit,
 }
 
-/// Eventos de entrada, ya independientes de X11. Botones: 1 izquierdo, 2 central, 3 derecho,
-/// 4/5 rueda.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Input {
     Press { x: i32, y: i32, button: u8 },
@@ -574,7 +630,8 @@ pub enum Input {
     Leave,
 }
 
-/// Lo que se dibuja de la escena, ya proyectado a píxeles y en orden de pintor.
+type SurfaceFace = (Face, bool);
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Shape3d {
     Sphere {
@@ -591,9 +648,17 @@ pub enum Shape3d {
         rgb: [f64; 3],
         fade: f64,
     },
+    Quad {
+        pts: [(f64, f64); 4],
+        rgb: [f64; 3],
+    },
+    Arrow {
+        from: (f64, f64),
+        to: (f64, f64),
+        head: [(f64, f64); 3],
+    },
 }
 
-/// Color por elemento: paleta propia inspirada en la convención CPK (O rojo, N azul, C gris…).
 pub fn element_rgb(z: u8) -> [f64; 3] {
     let c: [u8; 3] = match z {
         1 => [235, 235, 235],
@@ -621,9 +686,6 @@ pub fn element_rgb(z: u8) -> [f64; 3] {
     c.map(|v| f64::from(v) / 255.0)
 }
 
-/// Colores de Z = 1..=118 para los elementos sin color propio arriba: `bo:elementColor` del
-/// Blue Obelisk Data Repository (`bodr/elements/elements.xml`), licencia MIT,
-/// © The Blue Obelisk Movement.
 const ELEMENT_COLORS: [[u8; 3]; 118] = [
     [255, 255, 255],
     [217, 255, 255],
@@ -745,24 +807,67 @@ const ELEMENT_COLORS: [[u8; 3]; 118] = [
     [255, 0, 15],
 ];
 
-/// Radio de dibujo en Å (bolas y barras).
 fn ball_radius(z: u8) -> f64 {
     0.2 + 0.3 * elements::covalent_radius(z)
 }
 
 const BOND_RADIUS: f64 = 0.12;
 
+const DEFAULT_ISO: f64 = 0.02;
+const MIN_ISO: f64 = 1e-4;
+const MAX_ISO: f64 = 10.0;
+const ISO_STEP: f64 = 1.25;
+const MAX_QUADS: usize = 6000;
+const LOBE_RGB: [[f64; 3]; 2] = [[0.86, 0.16, 0.16], [0.16, 0.32, 0.9]];
+const FORCE_LEN: f64 = 1.5;
+
+fn forces(s: &Structure) -> Option<&[f64]> {
+    s.column("forces")
+        .filter(|c| c.width == 3)
+        .map(|c| c.values.as_slice())
+}
+
+fn max_force(f: &[f64]) -> f64 {
+    f.chunks(3)
+        .map(norm)
+        .filter(|n| n.is_finite())
+        .fold(0.0, f64::max)
+}
+
+fn norm(v: &[f64]) -> f64 {
+    v.iter().map(|c| c * c).sum::<f64>().sqrt()
+}
+
+pub fn column_lines(s: &Structure, i: usize) -> Vec<String> {
+    let parts: Vec<String> = s
+        .columns
+        .iter()
+        .filter_map(|c| {
+            let v = c.values.get(i * c.width..(i + 1) * c.width)?;
+            let text: Vec<String> = v.iter().map(|&x| short_number(x)).collect();
+            Some(match v.len() {
+                1 => format!("{}={}", c.name, text[0]),
+                _ if c.name == "forces" => {
+                    format!("forces=({}) |F|={}", text.join(", "), short_number(norm(v)))
+                }
+                _ => format!("{}=({})", c.name, text.join(", ")),
+            })
+        })
+        .collect();
+    parts.chunks(4).map(|c| c.join("  ")).collect()
+}
+
 pub struct App {
     pub loaded: Loaded,
     pub player: Player,
     pub bond_tolerance: f64,
     pub metal_metal: bool,
-    /// Eje E relativo al mínimo (E − Emin, en las unidades del archivo) en lugar de absoluto.
     pub relative_energy: bool,
-    /// Orientación fija: rotación de cada estructura hacia la de referencia (la que se veía al
-    /// pulsar "Fix orientation"), para que todas se vean igual orientadas.
+    pub iso: f64,
+    pub transparent: bool,
+    pub light: bool,
+    pub forces: bool,
     pub fixed_orientation: Option<Vec<Mat3>>,
-    /// Dibujo suavizado (XRender) en lugar de primitivas X11 básicas.
     pub smooth: bool,
     pub layout: Layout,
     pub hover: Hover,
@@ -771,26 +876,36 @@ pub struct App {
     rotation: Mat3,
     zoom: f64,
     pan: (f64, f64),
-    /// Radio de encuadre común (Å) para que el tamaño no salte al cambiar de estructura.
     extent: f64,
-    /// (botón, última posición) del arrastre en curso en la vista 3D.
     drag: Option<(u8, i32, i32)>,
-    /// Botón izquierdo pulsado sobre la gráfica: al mover el ratón se recorren las estructuras.
     scrub: bool,
-    /// Arrastrando el borde de la gráfica; `plot_h`, la altura elegida (se conserva al
-    /// redimensionar la ventana).
-    resizing_plot: bool,
-    plot_h: Option<i32>,
+    resizing: Option<Edge>,
+    surface: (Option<(usize, u64)>, Vec<SurfaceFace>),
     last_click: Option<(f64, i32, i32)>,
     bonds: BondCache,
 }
 
-/// Enlaces de la estructura actual y la clave (estructura, tolerancia, metal–metal) con la que se
-/// calcularon.
 type BondCache = (Option<(usize, f64, bool)>, Vec<(usize, usize)>);
 
 impl App {
     pub fn new(loaded: Loaded, layout: Layout) -> Self {
+        let grids = || loaded.structures.iter().filter_map(|s| s.grid.as_deref());
+        let iso = grids().next().map_or(DEFAULT_ISO, |g| {
+            (0.1 * g.max_abs()).clamp(MIN_ISO, DEFAULT_ISO)
+        });
+        let no_energy = loaded
+            .structures
+            .iter()
+            .filter(|s| s.energy.is_some())
+            .count()
+            < 2;
+        let panes = Panes {
+            cube: grids().next().is_some(),
+            forces: loaded.structures.iter().any(|s| forces(s).is_some()),
+            plot_h: no_energy.then_some(MIN_PANE_H).or(layout.panes.plot_h),
+            ..layout.panes
+        };
+        let layout = Layout::with_panes(layout.w, layout.h, layout.char_w, layout.line_h, panes);
         let extent = loaded
             .structures
             .iter()
@@ -827,8 +942,12 @@ impl App {
             extent,
             drag: None,
             scrub: false,
-            resizing_plot: false,
-            plot_h: None,
+            resizing: None,
+            surface: (None, Vec::new()),
+            iso,
+            forces: true,
+            transparent: false,
+            light: false,
             last_click: None,
             bonds: (None, Vec::new()),
         }
@@ -847,17 +966,15 @@ impl App {
         &self.bonds.1
     }
 
-    /// Gráfica: `None` si ninguna estructura tiene energía.
     pub fn plot_map(&self) -> Option<PlotMap> {
         let mut es = self.loaded.structures.iter().filter_map(|s| s.energy);
         let first = es.next()?;
         let (lo, hi) = es.fold((first, first), |(lo, hi), e| (lo.min(e), hi.max(e)));
-        let pad = ((hi - lo) * 0.06).max(lo.abs().max(1.0) * 1e-9);
+        let pad = if hi > lo { (hi - lo) * 0.06 } else { 1.0 };
         let (cw, lh) = (self.layout.char_w, self.layout.line_h);
         let p = self.layout.plot;
         let left = cw * 13;
         let e_ref = self.relative_energy.then_some(lo);
-        // Con E − Emin, una línea más arriba para el rótulo con el valor de Emin.
         let top = lh / 2 + 6 + if e_ref.is_some() { lh } else { 0 };
         let area = Rect {
             x: p.x + left,
@@ -874,15 +991,13 @@ impl App {
         })
     }
 
-    /// Posiciones proyectadas: (x, y) en píxeles, z de vista (Å, hacia el observador) y escala
-    /// (píxeles por Å).
-    fn projection(&self) -> (Vec<[f64; 3]>, f64) {
+    fn view(&self) -> (Mat3, [f64; 3], f64, (f64, f64)) {
         let atoms = &self.structure().atoms;
         let v = self.layout.view;
         let n = atoms.len().max(1) as f64;
         let c = [0, 1, 2].map(|k| atoms.iter().map(|a| a.pos[k]).sum::<f64>() / n);
         let scale = self.zoom * f64::from(v.w.min(v.h)) * 0.45 / self.extent.max(1.0);
-        let (ox, oy) = (
+        let origin = (
             f64::from(v.x) + f64::from(v.w) / 2.0 + self.pan.0,
             f64::from(v.y) + f64::from(v.h) / 2.0 + self.pan.1,
         );
@@ -890,7 +1005,14 @@ impl App {
             Some(fixed) => mul(&self.rotation, &fixed[self.player.current]),
             None => self.rotation,
         };
-        let pts = atoms
+        (m, c, scale, origin)
+    }
+
+    fn projection(&self) -> (Vec<[f64; 3]>, f64) {
+        let (m, c, scale, (ox, oy)) = self.view();
+        let pts = self
+            .structure()
+            .atoms
             .iter()
             .map(|a| {
                 let p = apply(&m, [0, 1, 2].map(|k| a.pos[k] - c[k]));
@@ -900,16 +1022,42 @@ impl App {
         (pts, scale)
     }
 
-    /// Escena en orden de pintor (de atrás hacia delante).
+    fn update_surface(&mut self) {
+        let key = (self.player.current, self.iso.to_bits());
+        if self.surface.0 == Some(key) {
+            return;
+        }
+        let quads = match &self.loaded.structures[key.0].grid {
+            Some(grid) => {
+                let (iso, n) = (self.iso, grid.n.iter().copied().max().unwrap_or(1));
+                let lobes = |step: usize| -> Vec<_> {
+                    let positive = grid.isosurface(iso, step).into_iter().map(|q| (q, true));
+                    let negative = grid.isosurface(-iso, step).into_iter().map(|q| (q, false));
+                    positive.chain(negative).collect()
+                };
+                let step = n / 150 + 1;
+                let quads = lobes(step);
+                if quads.len() > MAX_QUADS {
+                    let ratio = (quads.len() as f64 / MAX_QUADS as f64).sqrt();
+                    lobes((step as f64 * ratio).ceil() as usize)
+                } else {
+                    quads
+                }
+            }
+            None => Vec::new(),
+        };
+        self.surface = (Some(key), quads);
+    }
+
     pub fn scene(&mut self) -> Vec<Shape3d> {
         let bonds = self.current_bonds().to_vec();
+        self.update_surface();
         let (p, scale) = self.projection();
         let atoms = &self.structure().atoms;
         let (zmin, zmax) = p.iter().fold((f64::MAX, f64::MIN), |(lo, hi), q| {
             (lo.min(q[2]), hi.max(q[2]))
         });
-        // Oscurecimiento por profundidad: lo más lejano, al 70 %.
-        let fade = |z: f64| 1.0 - 0.3 * (zmax - z) / (zmax - zmin).max(1e-9);
+        let fade = |z: f64| 1.0 - 0.3 * ((zmax - z) / (zmax - zmin).max(1e-9)).clamp(0.0, 1.0);
         let mut items: Vec<(f64, Shape3d)> = atoms
             .iter()
             .zip(&p)
@@ -927,10 +1075,8 @@ impl App {
         for (a, b) in bonds {
             for (at, other) in [(a, b), (b, a)] {
                 let (s, o) = (p[at], p[other]);
-                // En píxeles (z también escalado) para medir dentro de la esfera.
                 let d = [o[0] - s[0], o[1] - s[1], (o[2] - s[2]) * scale];
                 let half = 0.5 * d.iter().map(|c| c * c).sum::<f64>().sqrt();
-                // El trazo empieza donde el cilindro corta la esfera (lo tapa la propia esfera).
                 let r = ball_radius(atoms[at].z);
                 let r = (r * r - BOND_RADIUS * BOND_RADIUS).max(0.0).sqrt() * scale;
                 if half <= r {
@@ -946,15 +1092,55 @@ impl App {
                     rgb: element_rgb(atoms[at].z),
                     fade: fade(0.5 * (start[2] + mid[2])),
                 };
-                // Profundidad media del tramo: detrás de su esfera si sale por la cara oculta.
                 items.push((0.5 * (start[2] + mid[2]), shape));
             }
+        }
+        let (m, c, scale, (ox, oy)) = self.view();
+        if let Some(f) = forces(self.structure()).filter(|_| self.forces) {
+            let max = max_force(f);
+            for (q, v) in p.iter().zip(f.chunks(3)) {
+                let r = apply(&m, [v[0], v[1], v[2]]);
+                let k = FORCE_LEN * scale / max;
+                let (dx, dy) = (r[0] * k, -r[1] * k);
+                let len = dx.hypot(dy);
+                if len.is_nan() || len < 4.0 {
+                    continue;
+                }
+                let (ux, uy) = (dx / len, dy / len);
+                let h = (0.35 * len).min(12.0);
+                let tip = (q[0] + dx, q[1] + dy);
+                let base = (tip.0 - ux * h, tip.1 - uy * h);
+                let side = |s: f64| (base.0 - uy * s * h * 0.45, base.1 + ux * s * h * 0.45);
+                let shape = Shape3d::Arrow {
+                    from: (q[0], q[1]),
+                    to: base,
+                    head: [tip, side(1.0), side(-1.0)],
+                };
+                items.push((f64::INFINITY, shape));
+            }
+        }
+        for (face, positive) in &self.surface.1 {
+            let v = face
+                .corners
+                .map(|q| apply(&m, [0, 1, 2].map(|k| q[k] - c[k])));
+            let diag = |a: usize, b: usize| [0, 1, 2].map(|k| v[a][k] - v[b][k]);
+            if cross(diag(2, 0), diag(3, 1))[2] <= 0.0 {
+                continue;
+            }
+            let n = apply(&m, face.normal);
+            let z = v.iter().map(|p| p[2]).sum::<f64>() / 4.0;
+            let lit = dot(n, [-0.4, 0.5, 0.77]).max(0.0) / dot(n, n).sqrt().max(1e-12);
+            let k = ((0.3 + 0.75 * lit) * fade(z) * 16.0).round() / 16.0;
+            let shape = Shape3d::Quad {
+                pts: v.map(|p| (ox + p[0] * scale, oy - p[1] * scale)),
+                rgb: LOBE_RGB[usize::from(!positive)].map(|c| (c * k).min(1.0)),
+            };
+            items.push((z, shape));
         }
         items.sort_by(|x, y| x.0.total_cmp(&y.0));
         items.into_iter().map(|(_, s)| s).collect()
     }
 
-    /// Átomo bajo el puntero (el más cercano al observador).
     fn atom_at(&self, x: i32, y: i32) -> Option<usize> {
         let (p, scale) = self.projection();
         let atoms = &self.structure().atoms;
@@ -966,12 +1152,33 @@ impl App {
             .max_by(|&a, &b| p[a][2].total_cmp(&p[b][2]))
     }
 
+    pub fn configure(&mut self, o: &crate::cli::Options) {
+        self.smooth = o.smooth || o.transparent;
+        self.light = o.light;
+        self.relative_energy = !o.absolute;
+        self.metal_metal = !o.no_mm;
+        self.transparent = o.transparent;
+        self.forces &= !o.no_forces;
+        if let Some(t) = o.tol {
+            self.bond_tolerance = t.clamp(0.8, 1.6);
+        }
+        if let Some(v) = o.iso {
+            self.iso = v.clamp(MIN_ISO, MAX_ISO);
+        }
+        if let Some(n) = o.frame {
+            self.player.go(n - 1);
+        }
+        if o.fix_orientation {
+            self.press(Button::FixOrientation, 0.0);
+        }
+    }
+
     fn hover_at(&self, x: i32, y: i32) -> Hover {
         let l = &self.layout;
         if let Some(b) = l.button_at(x, y) {
             Hover::Button(b)
-        } else if l.on_splitter(x, y) {
-            Hover::Splitter
+        } else if let Some(edge) = l.edge_at(x, y) {
+            Hover::Edge(edge)
         } else if l.view.contains(x, y) {
             self.atom_at(x, y).map_or(Hover::None, Hover::Atom)
         } else if l.plot.contains(x, y)
@@ -985,8 +1192,6 @@ impl App {
         }
     }
 
-    /// Selecciona la estructura con energía más cercana a la columna `x` de la gráfica (fuera del
-    /// área, la del extremo).
     fn scrub_to(&mut self, x: i32) {
         if let Some(m) = self.plot_map() {
             let x = x.clamp(m.area.x, m.area.x + m.area.w);
@@ -1016,6 +1221,14 @@ impl App {
             Button::MetalMetal => self.metal_metal = !self.metal_metal,
             Button::Smooth => self.smooth = !self.smooth,
             Button::RelativeEnergy => self.relative_energy = !self.relative_energy,
+            Button::Light => self.light = !self.light,
+            Button::LessIso => self.iso = (self.iso / ISO_STEP).max(MIN_ISO),
+            Button::MoreIso => self.iso = (self.iso * ISO_STEP).min(MAX_ISO),
+            Button::Forces => self.forces = !self.forces,
+            Button::Transparent => {
+                self.transparent = !self.transparent;
+                self.smooth |= self.transparent;
+            }
             Button::FixOrientation => {
                 self.fixed_orientation = match self.fixed_orientation {
                     Some(_) => None,
@@ -1035,16 +1248,12 @@ impl App {
         }
     }
 
-    /// Aplica un evento; devuelve si hay que redibujar.
     pub fn handle(&mut self, input: Input, now: f64) -> bool {
         let before = (self.player.current, self.player.playing, self.hover);
         match input {
             Input::Resize { w, h } => {
                 let (cw, lh) = (self.layout.char_w, self.layout.line_h);
-                self.layout = match self.plot_h {
-                    Some(ph) => Layout::with_plot_h(w, h, cw, lh, ph),
-                    None => Layout::new(w, h, cw, lh),
-                };
+                self.layout = Layout::with_panes(w, h, cw, lh, self.layout.panes);
                 return true;
             }
             Input::Key(k) => match k {
@@ -1064,12 +1273,13 @@ impl App {
                     self.press(b, now);
                     return true;
                 }
-                if button == 1 && l.on_splitter(x, y) {
-                    self.resizing_plot = true;
+                if button == 1
+                    && let Some(edge) = l.edge_at(x, y)
+                {
+                    self.resizing = Some(edge);
                     return true;
                 }
                 if l.plot.contains(x, y) {
-                    // Gráfica estática: el botón izquierdo selecciona y, arrastrando, recorre.
                     if button == 1 {
                         self.scrub = true;
                         self.scrub_to(x);
@@ -1102,19 +1312,24 @@ impl App {
             }
             Input::Release { button } => {
                 self.scrub &= button != 1;
-                self.resizing_plot &= button != 1;
+                if button == 1 {
+                    self.resizing = None;
+                }
                 if self.drag.is_some_and(|(b, _, _)| b == button) {
                     self.drag = None;
                 }
             }
             Input::Motion { x, y } => {
                 self.pointer = (x, y);
-                if self.resizing_plot {
+                if let Some(edge) = self.resizing {
                     let l = &self.layout;
-                    let ph = l.h - y;
-                    self.layout = Layout::with_plot_h(l.w, l.h, l.char_w, l.line_h, ph);
-                    self.plot_h = Some(self.layout.plot.h);
-                    self.hover = Hover::Splitter;
+                    let mut panes = l.panes;
+                    match edge {
+                        Edge::Plot => panes.plot_h = Some(l.h - y),
+                        Edge::Panel => panes.panel_w = Some(l.w - x),
+                    }
+                    self.layout = Layout::with_panes(l.w, l.h, l.char_w, l.line_h, panes);
+                    self.hover = Hover::Edge(edge);
                     return true;
                 }
                 if let Some((b, px, py)) = self.drag {
@@ -1169,6 +1384,8 @@ mod tests {
             comment: String::new(),
             path: PathBuf::new(),
             line: 1,
+            columns: Vec::new(),
+            grid: None,
         }
     }
 
@@ -1261,7 +1478,6 @@ mod tests {
         assert_eq!(l.header.h + l.view.h + l.plot.h, 800);
         assert_eq!(l.view.w + l.panel.w, 1200);
         assert!(l.panel.w < 240, "columna estrecha: {}", l.panel.w);
-        // Un control por fila (los de reproducción, de todo el ancho), todos en la mitad de arriba.
         for b in [
             Button::First,
             Button::Prev,
@@ -1278,7 +1494,7 @@ mod tests {
             assert!(r.h >= 34 && r.w > l.panel.w - 20, "{b:?} pequeño: {r:?}");
         }
         let bottom = l.items.iter().map(|i| i.1.y + i.1.h).max().unwrap();
-        assert!(bottom < 800 * 2 / 3, "los controles bajan hasta {bottom}");
+        assert!(bottom < 800 * 4 / 5, "los controles bajan hasta {bottom}");
         let inside = |a: Rect, b: Rect| {
             b.x <= a.x && a.x + a.w <= b.x + b.w && b.y <= a.y && a.y + a.h <= b.y + b.h
         };
@@ -1295,7 +1511,6 @@ mod tests {
                 assert!(apart, "{a:?} y {b:?} se solapan");
             }
         }
-        // Los textos de valor caben entre sus botones − y +.
         for (item, text) in [
             (BarItem::Speed, speed_text(120.0)),
             (BarItem::Tolerance, tolerance_text(1.6)),
@@ -1357,16 +1572,12 @@ mod tests {
         assert!(a.quit);
     }
 
-    /// Clic en la gráfica: selecciona la estructura bajo el puntero; arrastrar recorre las
-    /// estructuras, pero la gráfica no se desplaza.
-    /// Arrastrar el borde superior de la gráfica cambia su altura; la vista 3D ocupa el resto y
-    /// la altura elegida se conserva al redimensionar la ventana.
     #[test]
     fn plot_height_follows_the_dragged_edge() {
         let mut a = app(5);
         let (h0, y0) = (a.layout.plot.h, a.layout.plot.y);
         a.handle(Input::Motion { x: 100, y: y0 }, 0.0);
-        assert_eq!(a.hover, Hover::Splitter);
+        assert_eq!(a.hover, Hover::Edge(Edge::Plot));
         a.handle(
             Input::Press {
                 x: 100,
@@ -1386,7 +1597,6 @@ mod tests {
         let l = &a.layout;
         assert_eq!(l.plot.h, h0 + 100);
         assert_eq!(l.header.h + l.view.h + l.plot.h, l.h);
-        // Más pequeña que el mínimo no: la gráfica sigue siendo usable.
         a.handle(
             Input::Press {
                 x: 100,
@@ -1400,7 +1610,6 @@ mod tests {
         assert_eq!(a.layout.plot.h, MIN_PANE_H);
         a.handle(Input::Resize { w: 1400, h: 900 }, 0.0);
         assert_eq!(a.layout.plot.h, MIN_PANE_H, "se conserva al redimensionar");
-        // El borde no se confunde con la gráfica: arrastrarlo no cambia de estructura.
         assert_eq!(a.player.current, 0);
     }
 
@@ -1411,7 +1620,6 @@ mod tests {
         }
     }
 
-    /// Molécula sin simetría; `turn` la gira y la desplaza.
     const ASYM: [(u8, [f64; 3]); 5] = [
         (6, [0.0, 0.0, 0.0]),
         (8, [1.2, 0.1, 0.0]),
@@ -1432,8 +1640,6 @@ mod tests {
         (0..3).all(|k| (a[k] - b[k]).abs() < 1e-6)
     }
 
-    /// Mismos átomos en el mismo orden: "Fix orientation" superpone cada estructura sobre la de
-    /// referencia, así que una copia girada se dibuja exactamente igual que la referencia.
     #[test]
     fn fixed_orientation_superposes_same_atoms() {
         let (a, b) = (mol(&ASYM), mol(&turn(&ASYM)));
@@ -1467,8 +1673,6 @@ mod tests {
         );
     }
 
-    /// Isómero con los átomos en otro orden: se alinean los ejes principales y quedan los mismos
-    /// átomos en las mismas posiciones, aunque con otro índice.
     #[test]
     fn fixed_orientation_aligns_isomers_by_principal_axes() {
         let mut shuffled = turn(&ASYM);
@@ -1485,6 +1689,202 @@ mod tests {
                 .any(|(t, &q)| t.z == atom.z && close(p, q));
             assert!(found, "Z = {} en {p:?} no coincide", atom.z);
         }
+    }
+
+    fn cube_app() -> App {
+        let n = 20;
+        let at = |v: usize| (v as f64 - 9.5) * 0.5;
+        let values = (0..n * n * n)
+            .map(|i| {
+                let (x, y, z) = (at(i / (n * n)), at(i / n % n), at(i % n));
+                (z * (-(x * x + y * y + z * z) / 4.0).exp()) as f32
+            })
+            .collect();
+        let grid = mole_core::cube::Grid {
+            n: [n; 3],
+            origin: [-4.75; 3],
+            axes: [[0.5, 0.0, 0.0], [0.0, 0.5, 0.0], [0.0, 0.0, 0.5]],
+            values,
+        };
+        App::new(
+            Loaded {
+                structures: vec![Structure {
+                    columns: Vec::new(),
+                    grid: Some(Box::new(grid)),
+                    ..s(None)
+                }],
+                ..Default::default()
+            },
+            Layout::new(1200, 800, 9, 15),
+        )
+    }
+
+    #[test]
+    fn cube_shows_two_lobes_and_its_controls() {
+        let mut a = cube_app();
+        assert_eq!(a.layout.plot.h, MIN_PANE_H, "sin energías, gráfica mínima");
+        let faces = |a: &mut App| {
+            let mut colors = [0, 0];
+            for shape in a.scene() {
+                if let Shape3d::Quad { rgb, .. } = shape {
+                    colors[usize::from(rgb[2] > rgb[0])] += 1;
+                }
+            }
+            colors
+        };
+        let [red, blue] = faces(&mut a);
+        assert!(red > 50 && blue > 50, "{red} rojas, {blue} azules");
+        let iso = a.iso;
+        a.press(Button::MoreIso, 0.0);
+        assert!(a.iso > iso);
+        let [smaller, _] = faces(&mut a);
+        assert!(
+            smaller < red,
+            "más iso, lóbulo más pequeño: {smaller} frente a {red}"
+        );
+        a.press(Button::Transparent, 0.0);
+        assert!(
+            a.transparent && a.smooth,
+            "la transparencia necesita XRender"
+        );
+        assert!(a.layout.items.iter().any(|i| i.0 == BarItem::Iso));
+        let bottom = a.layout.items.iter().map(|i| i.1.y + i.1.h).max().unwrap();
+        assert!(bottom < a.layout.h, "los controles caben: {bottom}");
+        assert!(!app(2).layout.items.iter().any(|i| i.0 == BarItem::Iso));
+    }
+
+    #[test]
+    fn command_line_options() {
+        let mut a = app(5);
+        let o = crate::cli::Options {
+            absolute: true,
+            no_mm: true,
+            transparent: true,
+            frame: Some(3),
+            tol: Some(1.4),
+            iso: Some(0.05),
+            ..Default::default()
+        };
+        a.configure(&o);
+        assert_eq!(a.player.current, 2);
+        assert!(!a.relative_energy && !a.metal_metal);
+        assert!(
+            a.transparent && a.smooth,
+            "la transparencia necesita XRender"
+        );
+        assert_eq!((a.bond_tolerance, a.iso), (1.4, 0.05));
+        let mut a = app(2);
+        a.configure(&crate::cli::Options {
+            frame: Some(99),
+            ..Default::default()
+        });
+        assert_eq!(a.player.current, 1, "--frame mayor que el total: la última");
+    }
+
+    #[test]
+    fn force_arrows_and_column_values() {
+        let mut st = s(Some(0.0));
+        st.columns = vec![
+            mole_core::Column {
+                name: "q".into(),
+                width: 1,
+                values: vec![-0.5, f64::NAN],
+            },
+            mole_core::Column {
+                name: "forces".into(),
+                width: 3,
+                values: vec![1e-5, 0.0, 0.0, 0.0, 2e-5, 0.0],
+            },
+        ];
+        let loaded = Loaded {
+            structures: vec![st],
+            ..Default::default()
+        };
+        let mut a = App::new(loaded, Layout::new(1200, 800, 9, 15));
+        let arrows = |a: &mut App| {
+            a.scene()
+                .iter()
+                .filter_map(|s| match *s {
+                    Shape3d::Arrow { from, head, .. } => {
+                        Some((head[0].0 - from.0).hypot(head[0].1 - from.1))
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let len = arrows(&mut a);
+        assert_eq!(len.len(), 2, "una flecha por átomo");
+        assert!((len[1] - 2.0 * len[0]).abs() < 1e-6, "{len:?}");
+        assert!(
+            a.layout
+                .items
+                .iter()
+                .any(|i| i.0 == BarItem::Button(Button::Forces))
+        );
+        a.press(Button::Forces, 0.0);
+        assert!(arrows(&mut a).is_empty());
+        assert!(
+            !app(1)
+                .layout
+                .items
+                .iter()
+                .any(|i| i.0 == BarItem::Button(Button::Forces))
+        );
+        let st = a.structure();
+        assert_eq!(
+            column_lines(st, 0),
+            ["q=-0.5  forces=(1.00e-5, 0, 0) |F|=1.00e-5"]
+        );
+        assert_eq!(
+            column_lines(st, 1)[0],
+            "q=NaN  forces=(0, 2.00e-5, 0) |F|=2.00e-5"
+        );
+        assert!(column_lines(st, 5).is_empty());
+    }
+
+    #[test]
+    fn surface_has_a_face_limit() {
+        let mut a = cube_app();
+        a.update_surface();
+        assert!(a.surface.1.len() <= MAX_QUADS);
+        let grid = a.loaded.structures[0].grid.as_ref().unwrap();
+        assert!(
+            grid.isosurface(a.iso, 1).len() + grid.isosurface(-a.iso, 1).len() >= a.surface.1.len()
+        );
+    }
+
+    #[test]
+    fn panel_width_follows_its_edge_and_never_hides_controls() {
+        let mut a = app(3);
+        let (w0, x) = (a.layout.panel.w, a.layout.panel.x);
+        a.handle(Input::Motion { x, y: 300 }, 0.0);
+        assert_eq!(a.hover, Hover::Edge(Edge::Panel));
+        a.handle(
+            Input::Press {
+                x,
+                y: 300,
+                button: 1,
+            },
+            0.0,
+        );
+        a.handle(Input::Motion { x: x - 80, y: 300 }, 0.0);
+        a.handle(Input::Release { button: 1 }, 0.0);
+        assert_eq!(a.layout.panel.w, w0 + 80);
+        assert_eq!(a.layout.view.w + a.layout.panel.w, a.layout.w);
+        a.handle(
+            Input::Press {
+                x: a.layout.panel.x,
+                y: 300,
+                button: 1,
+            },
+            0.0,
+        );
+        a.handle(Input::Motion { x: 5000, y: 300 }, 0.0);
+        a.handle(Input::Release { button: 1 }, 0.0);
+        assert_eq!(
+            a.layout.panel.w, w0,
+            "no baja de lo que piden los controles"
+        );
     }
 
     #[test]
@@ -1590,6 +1990,17 @@ mod tests {
         assert_eq!(tick_text(t[0], step), "-74.965");
         let (t, _) = nice_ticks(0.5, 4920.5, 8);
         assert_eq!(t, vec![1000.0, 2000.0, 3000.0, 4000.0]);
+        let (t, step) = nice_ticks(0.0, 0.0000083, 5);
+        let k = tick_exponent(&t, step);
+        assert_eq!(k, -6);
+        let f = 10f64.powi(k);
+        assert_eq!(tick_text(t[1] / f, step / f), "2");
+        let (t, step) = nice_ticks(-74.96501, -74.96499, 5);
+        assert_eq!(tick_exponent(&t, step), 0);
+        assert_eq!(tick_exponent(&[0.0, 0.002], 0.001), 0);
+        assert_eq!(short_number(0.0000012345), "1.23e-6");
+        assert_eq!(short_number(1.8200000000651926), "1.82");
+        assert_eq!(short_number(0.0), "0");
     }
 
     #[test]

@@ -1,17 +1,36 @@
-//! XYZ multi-frame: `n`, comentario, `n` líneas `símbolo x y z` (Å), repetido.
-
-use crate::{Atom, EnergySource, Error, Structure, elements};
+use crate::{Atom, Column, EnergySource, Error, Structure, elements};
 use std::path::Path;
 
-/// Máximo de átomos por estructura.
 pub const MAX_ATOMS: usize = 1_000_000;
 
-/// Energía y etiqueta de la línea de comentario. Convenciones reconocidas, en este orden:
-/// 1. clave `E=<número>` o `energy=<número>` en cualquier posición (`label=3a  E=-5131.15 Eh …`),
-///    o `E <número>` separado (trayectorias de ORCA: `Coordinates from ORCA-job h2o E -74.96`);
-/// 2. GLOMOS: el primer campo es un número (`-3219847.92  stage100001`), el segundo la etiqueta.
-///
-/// La etiqueta sale de `label=<texto>` o, en GLOMOS, del segundo campo.
+const MAX_COLUMNS: usize = 64;
+
+fn properties(comment: &str) -> Vec<(&str, usize, usize)> {
+    let Some(spec) = comment
+        .split_whitespace()
+        .find_map(|t| t.strip_prefix("Properties="))
+    else {
+        return Vec::new();
+    };
+    let f: Vec<&str> = spec.split(':').collect();
+    if !f.len().is_multiple_of(3) || !f.starts_with(&["species", "S", "1", "pos", "R", "3"]) {
+        return Vec::new();
+    }
+    let (mut col, mut out) = (4, Vec::new());
+    for t in f[6..].chunks(3) {
+        match t[2].parse::<usize>() {
+            Ok(n) if n > 0 && col + n <= MAX_COLUMNS => {
+                if matches!(t[1], "R" | "I") {
+                    out.push((t[0], col, n));
+                }
+                col += n;
+            }
+            _ => return Vec::new(),
+        }
+    }
+    out
+}
+
 pub fn energy_from_comment(comment: &str) -> (Option<f64>, Option<String>) {
     let num = |s: &str| s.parse::<f64>().ok().filter(|v| v.is_finite());
     let mut energy = None;
@@ -41,14 +60,11 @@ pub fn energy_from_comment(comment: &str) -> (Option<f64>, Option<String>) {
     (energy, label)
 }
 
-/// Lee todas las estructuras de un XYZ. Nunca entra en pánico; ante cualquier dato inválido
-/// devuelve el error con su número de línea.
 pub fn parse(text: &str, path: &Path) -> Result<Vec<Structure>, Error> {
     let lines: Vec<&str> = text.lines().collect();
     let mut frames = Vec::new();
     let mut i = 0;
     loop {
-        // Líneas en blanco entre estructuras o al final.
         while i < lines.len() && lines[i].trim().is_empty() {
             i += 1;
         }
@@ -71,7 +87,6 @@ pub fn parse(text: &str, path: &Path) -> Result<Vec<Structure>, Error> {
                 format!("number of atoms out of range: {n} (1..={MAX_ATOMS})"),
             ));
         }
-        // Validar el contador contra las líneas reales antes de reservar memoria.
         if lines.len() - i - 1 < n + 1 {
             return Err(Error::parse(
                 path,
@@ -83,10 +98,32 @@ pub fn parse(text: &str, path: &Path) -> Result<Vec<Structure>, Error> {
             ));
         }
         let comment = lines[i + 1].trim().to_string();
+        let props = properties(&comment);
+        let needed = props.iter().map(|&(_, c, w)| c + w).max().unwrap_or(4);
+        let mut columns: Vec<Column> = props
+            .iter()
+            .map(|&(name, _, width)| Column {
+                name: name.to_string(),
+                width,
+                values: Vec::new(),
+            })
+            .collect();
         let mut atoms = Vec::with_capacity(n);
         for (k, line) in lines[i + 2..i + 2 + n].iter().enumerate() {
             let lineno = i + 3 + k;
-            let toks: Vec<&str> = line.split_whitespace().take(4).collect();
+            let toks: Vec<&str> = line.split_whitespace().take(needed).collect();
+            if toks.len() < needed {
+                columns.clear();
+            }
+            for (col, &(_, first, width)) in columns.iter_mut().zip(&props) {
+                col.values
+                    .extend(toks[first..first + width].iter().map(|t| {
+                        t.parse::<f64>()
+                            .ok()
+                            .filter(|v| v.is_finite())
+                            .unwrap_or(f64::NAN)
+                    }));
+            }
             if toks.len() < 4 {
                 return Err(Error::parse(path, lineno, "expected 'symbol x y z'"));
             }
@@ -114,6 +151,8 @@ pub fn parse(text: &str, path: &Path) -> Result<Vec<Structure>, Error> {
             comment,
             path: path.to_path_buf(),
             line: start,
+            columns,
+            grid: None,
         });
         i += n + 2;
     }
@@ -182,7 +221,6 @@ mod tests {
         assert!(err("").msg.contains("no structures"));
         assert!(err("x\n").msg.contains("number of atoms"));
         assert_eq!(err("0\nc\n").line, Some(1));
-        // Contador enorme: debe fallar sin reservar memoria.
         assert!(err("999999\nc\nO 0 0 0\n").msg.contains("ends at line"));
         assert!(
             err("99999999999999999999\nc\n")
@@ -199,11 +237,31 @@ mod tests {
         assert_eq!(e.line, Some(3));
     }
 
-    /// Mutaciones pseudoaleatorias de un XYZ válido: el lector nunca debe entrar en pánico.
-    // ponytail: sustituto de cargo-fuzz (requiere nightly); añadir un fuzz target si se adopta nightly.
+    #[test]
+    fn extended_columns() {
+        let text = "2\nE=-1 Properties=species:S:1:pos:R:3:tag:S:1:q:R:1:forces:R:3\n\
+                    H 0 0 0 a 0.5 1 2 3\nH 0 0 0.7 b nan -1 -2 -3e-5\n\
+                    1\nProperties=species:S:1:pos:R:3:q:R:1\nO 0 0 0\n\
+                    1\nProperties=pos:R:3:species:S:1:q:R:1\nO 0 0 0 1\n";
+        let f = p(text).unwrap();
+        let q = f[0].column("q").unwrap();
+        assert_eq!((q.width, q.values[0]), (1, 0.5));
+        assert!(q.values[1].is_nan());
+        let forces = f[0].column("forces").unwrap();
+        assert_eq!(forces.values[3..], [-1.0, -2.0, -3e-5]);
+        assert!(
+            f[0].column("tag").is_none(),
+            "las columnas de texto no se guardan"
+        );
+        assert!(f[1].columns.is_empty(), "línea sin la columna anunciada");
+        assert!(f[2].columns.is_empty(), "no empieza con species y pos");
+        assert!(properties("Properties=species:S:1:pos:R:3:x:R:99").is_empty());
+        assert!(properties("Properties=species:S:1:pos:R:3:x:R").is_empty());
+    }
+
     #[test]
     fn mutations_never_panic() {
-        let base = "2\n-1.0 a\nO 0.0 0.0 0.0\nH 0.96 0.0 0.0\n2\nE=-2\nO 0 0 0\nH 1 0 0\n";
+        let base = "2\n-1.0 a\nO 0.0 0.0 0.0\nH 0.96 0.0 0.0\n2\nE=-2 Properties=species:S:1:pos:R:3:f:R:3\nO 0 0 0 1 2 3\nH 1 0 0 4 5 6\n";
         crate::mutations(base, 20_000, |t| {
             let _ = p(t);
         });

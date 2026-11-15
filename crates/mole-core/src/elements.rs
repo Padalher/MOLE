@@ -1,5 +1,3 @@
-//! Símbolos y radios covalentes (fuente en `docs/data-sources.md`).
-
 const SYMBOLS: [&str; 118] = [
     "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne", "Na", "Mg", "Al", "Si", "P", "S", "Cl",
     "Ar", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn", "Ga", "Ge", "As",
@@ -11,8 +9,6 @@ const SYMBOLS: [&str; 118] = [
     "Fl", "Mc", "Lv", "Ts", "Og",
 ];
 
-/// Radios covalentes en Å para Z = 1..=96 (Cordero et al., 2008). Para C, Mn, Fe y Co se usa el
-/// valor sp3 / bajo espín.
 const COVALENT_RADII: [f64; 96] = [
     0.31, 0.28, 1.28, 0.96, 0.84, 0.76, 0.71, 0.66, 0.57, 0.58, 1.66, 1.41, 1.21, 1.11, 1.07, 1.05,
     1.02, 1.06, 2.03, 1.76, 1.70, 1.60, 1.53, 1.39, 1.39, 1.32, 1.26, 1.24, 1.32, 1.22, 1.22, 1.20,
@@ -22,10 +18,8 @@ const COVALENT_RADII: [f64; 96] = [
     1.45, 1.46, 1.48, 1.40, 1.50, 1.50, 2.60, 2.21, 2.15, 2.06, 2.00, 1.96, 1.90, 1.87, 1.80, 1.69,
 ];
 
-/// Radio para elementos sin dato tabulado (Z > 96).
 const DEFAULT_RADIUS: f64 = 1.5;
 
-/// Símbolo del elemento `z` (1..=118).
 pub fn symbol(z: u8) -> &'static str {
     SYMBOLS
         .get(usize::from(z).wrapping_sub(1))
@@ -33,7 +27,6 @@ pub fn symbol(z: u8) -> &'static str {
         .unwrap_or("?")
 }
 
-/// Radio covalente en Å.
 pub fn covalent_radius(z: u8) -> f64 {
     COVALENT_RADII
         .get(usize::from(z).wrapping_sub(1))
@@ -41,8 +34,6 @@ pub fn covalent_radius(z: u8) -> f64 {
         .unwrap_or(DEFAULT_RADIUS)
 }
 
-/// No metales y metaloides (H, He, B, C, N, O, F, Ne, Si, P, S, Cl, Ar, Ge, As, Se, Br, Kr, Sb,
-/// Te, I, Xe, At, Rn); el resto se considera metal.
 pub fn is_metal(z: u8) -> bool {
     !matches!(
         z,
@@ -50,8 +41,6 @@ pub fn is_metal(z: u8) -> bool {
     )
 }
 
-/// Número atómico a partir de un símbolo (`Ti`, `TI`, `ti`), de un símbolo con sufijo (`Ti1`, `O_2`)
-/// o de un número atómico (`22`).
 pub fn parse_element(token: &str) -> Option<u8> {
     if let Ok(z) = token.parse::<u8>() {
         return (1..=118).contains(&z).then_some(z);

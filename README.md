@@ -5,8 +5,8 @@
 <h1 align="center">MOLE</h1>
 
 <p align="center">
-  <b>A lightweight viewer for ensembles of molecular structures, with an E vs n energy plot.</b><br>
-  Fluid over <code>ssh -Y</code> from an HPC cluster · a single executable · reads XYZ, Gaussian and ORCA files
+  <b>A lightweight molecular viewer for XYZ, Gaussian, ORCA and cube files, with an E vs n energy plot.</b><br>
+  Fluid over <code>ssh -Y</code> from an HPC cluster · a single executable · reads XYZ, Gaussian, ORCA and cube files
 </p>
 
 <p align="center">
@@ -22,11 +22,12 @@
   <img src="https://raw.githubusercontent.com/Padalher/MOLE/main/assets/screenshot.png" alt="MOLE window: 3D view of a water molecule, E vs n plot of its geometry optimization and the controls column" width="820">
 </p>
 
-MOLE is made for conformer searches, global optimization runs and geometry optimization trajectories. Launched from the terminal, it opens a window with:
+MOLE opens XYZ files with one or more structures, Gaussian and ORCA output files and cube files. Launched from the terminal, it opens a window with:
 
 - **the 3D structure**: ball and stick; rotate, move and zoom with the mouse;
 - **the energy plot E vs n**: relative energies (E − Emin) by default; hover a point to see n, E and the label; click or drag to browse the structures;
-- **a column of controls next to the structure**: first, last, play/pause, previous, next, speed, loop, bond tolerance, metal–metal bonds and a fixed orientation for all the structures.
+- **a column of controls next to the structure**, grouped by what they do (playback, bonds, surface, forces, view, plot): first, last, play/pause, previous, next, speed, loop, bond tolerance, metal–metal bonds, a fixed orientation for all the structures and a white theme; every control is also a command-line option (`mole --help`);
+- **orbitals and densities from cube files**: isosurfaces with the positive lobe in red and the negative one in blue, an adjustable isovalue and optional transparency.
 
 MOLE is designed to run **on a remote machine (an HPC cluster or a workstation) and be viewed over `ssh -Y`**. It draws with the core X11 protocol, so only drawing commands travel over the network (a few KB per frame), and the window stays fluid even on a home connection. It only reads results; it never runs calculations.
 
@@ -85,14 +86,19 @@ mole ensemble.xyz                 # XYZ file with one or more structures
 mole calc_*.out                   # Gaussian or ORCA outputs: one structure per file
 mole opt_trj.xyz                  # ORCA optimization trajectory (E vs step)
 mole a.xyz b.xyz                  # several files, in the given order
+mole orbital.cube                 # cube file: atoms and an isosurface
+mole *.cub                        # several cube files, browsed like structures
 mole --smooth ensemble.xyz        # antialiased drawing (XRender)
+mole --light ensemble.xyz         # white theme
+mole --frame 12 ensemble.xyz      # start at structure 12
+mole --iso 0.05 orbital.cube      # isovalue of the surface
 mole --list ensemble.xyz          # print the structure table, no window
 mole --help
 ```
 
 - **Keyboard:** ← → previous/next · space play/pause · Home/End first/last · q or Esc quit.
 - **Mouse (3D view):** drag to rotate · right button to move · wheel to zoom · double click to reset.
-- **Mouse (plot):** hover a point to see n, E and the label · click or drag to browse the structures · drag its top edge to make it taller or shorter.
+- **Mouse (plot):** hover a point to see n, E and the label · click or drag to browse the structures · drag its top edge to make it taller or shorter. Drag the left edge of the controls column to widen it.
 - **Energy axis:** relative (E − Emin) by default; the *E - Emin* checkbox switches to absolute energies.
 - **Fix orientation:** turns every structure to the orientation of the one on screen (atom by atom for trajectories and conformers, by principal axes for isomers), so an ensemble can be browsed without the view jumping.
 
@@ -107,19 +113,24 @@ mole examples/water_opt_trj.xyz
 | `.xyz` | all frames | from each comment line: a leading number (`-3219847.92  label`), `E=-76.32`, `energy=-76.32` or `… E -76.32` (ORCA `*_trj.xyz`) |
 | Gaussian output (`.out`, `.log`) | last geometry | last `SCF Done` |
 | ORCA output (`.out`, `.log`) | last geometry | its `FINAL SINGLE POINT ENERGY` |
+| Gaussian cube (`.cube`, `.cub`) | atoms and a 3D grid (first data set) | none |
 
 The program is recognized by the file contents, not by the extension. Energies are shown as read, without unit conversion. By default the plot shows relative energies, E − Emin, in the same units, and writes Emin above it; the *E - Emin* checkbox switches it to absolute energies. The header and the tooltip always show each energy as read. Structures without an energy can be viewed, but they are not plotted.
 
 Tested with XYZ files, Gaussian 16 Rev. B.01 and ORCA 6.1 outputs.
 
-**Planned:** Gaussian cube files (orbitals and densities), shown as isosurfaces with the positive and negative lobes in red and blue, an adjustable isovalue and optional transparency. Cube files cannot be opened yet.
+Extended XYZ files (`Properties=species:S:1:pos:R:3:…` in the comment line) keep their extra numeric columns per atom: hovering over an atom shows its values (charges, Fukui functions, …), and a `forces:R:3` column is drawn as one arrow per atom, scaled so that the largest force of each structure has the same length; the *Arrows* checkbox hides them. The `|F|` shown when hovering gives the actual magnitude.
+
+Cube files were tested with orbitals, Fukui functions and densities from Multiwfn and ORCA. To stay fluid over the network, a surface is drawn with at most 6000 faces (a coarser grid is used above that); transparency needs XRender, so it turns on smooth drawing.
 
 ## Citation
 If you use MOLE in published work, please cite it with its DOI, [10.5281/zenodo.23963301](https://doi.org/10.5281/zenodo.23963301) (Zenodo; it always points to the latest version, and each version also has its own DOI there). The metadata are in [`CITATION.cff`](https://github.com/Padalher/MOLE/blob/main/CITATION.cff), and GitHub's *Cite this repository* button turns them into APA or BibTeX.
 
 ## Authors
-- Pablo D. Alvarez-Hernandez: Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, Mexico.
-- Filiberto Ortiz Chi: Cinvestav Unidad Mérida, TheoChem Mérida, Mexico.
+- Pablo D. Alvarez-Hernandez: Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, Mexico. <pablo.alvarez@padalher.com>
+- Filiberto Ortiz Chi: Cinvestav Unidad Mérida, TheoChem Mérida, Mexico. <filiberto.ortiz@cinvestav.mx>
+
+Questions about the software: <contact@padalher.com>. Academic contact: the authors' addresses above.
 
 MOLE was designed, directed and validated by Pablo D. Alvarez-Hernandez. AI-based coding assistants were used to write and refactor parts of the code, the automated tests and the documentation; every change was reviewed and validated by the author. The energies and geometries that MOLE shows are always read from the quantum-chemistry output files, never generated by a language model.
 

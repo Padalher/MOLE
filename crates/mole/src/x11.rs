@@ -1,11 +1,8 @@
-//! Ventana y dibujo con el protocolo X11 básico (x11rb, sin bibliotecas de C). Por `ssh -X/-Y`
-//! solo viajan órdenes de dibujo (unos KB por fotograma) que dibuja el servidor X del usuario; la
-//! gráfica se dibuja una vez en un pixmap del servidor y se copia en cada fotograma.
-
 use crate::app::{
-    App, BarItem, Button, FIX_ORIENTATION_LABEL, Hover, Input, Key, Layout, METAL_METAL_LABEL,
-    RELATIVE_ENERGY_LABEL, Rect, Shape3d, nice_ticks, playback_label, speed_text, tick_text,
-    tolerance_text,
+    App, BarItem, Button, Edge, FIX_ORIENTATION_LABEL, FORCES_LABEL, Hover, Input, Key,
+    LIGHT_LABEL, Layout, METAL_METAL_LABEL, RELATIVE_ENERGY_LABEL, Rect, Shape3d,
+    TRANSPARENT_LABEL, column_lines, iso_text, nice_ticks, playback_label, short_number,
+    speed_text, tick_exponent, tick_text, tolerance_text,
 };
 use crate::cli::Options;
 use mole_core::{Loaded, elements};
@@ -26,26 +23,66 @@ use x11rb::wrapper::ConnectionExt as _;
 type Res<T> = Result<T, Box<dyn Error>>;
 type Rgb = [f64; 3];
 
-const BG_VIEW: Rgb = [0.04, 0.04, 0.045];
-const BG_PANEL: Rgb = [0.11, 0.11, 0.12];
-const BG_PLOT: Rgb = [0.07, 0.07, 0.08];
-const TEXT: Rgb = [0.9, 0.9, 0.92];
-const WEAK: Rgb = [0.55, 0.55, 0.6];
-const GRID: Rgb = [0.18, 0.18, 0.2];
+struct Theme {
+    view: Rgb,
+    panel: Rgb,
+    plot: Rgb,
+    text: Rgb,
+    weak: Rgb,
+    grid: Rgb,
+    unchecked: Rgb,
+    face: Rgb,
+    face_hover: Rgb,
+    border: Rgb,
+    tooltip: Rgb,
+}
+
+const DARK: Theme = Theme {
+    view: [0.04, 0.04, 0.045],
+    panel: [0.11, 0.11, 0.12],
+    plot: [0.07, 0.07, 0.08],
+    text: [0.9, 0.9, 0.92],
+    weak: [0.55, 0.55, 0.6],
+    grid: [0.18, 0.18, 0.2],
+    unchecked: [0.2, 0.2, 0.22],
+    face: [0.19, 0.19, 0.21],
+    face_hover: [0.26, 0.26, 0.3],
+    border: [0.32, 0.32, 0.36],
+    tooltip: [0.16, 0.16, 0.18],
+};
+
+const LIGHT: Theme = Theme {
+    view: [1.0, 1.0, 1.0],
+    panel: [0.94, 0.94, 0.95],
+    plot: [1.0, 1.0, 1.0],
+    text: [0.1, 0.1, 0.12],
+    weak: [0.4, 0.4, 0.45],
+    grid: [0.85, 0.85, 0.88],
+    unchecked: [1.0, 1.0, 1.0],
+    face: [0.98, 0.98, 0.99],
+    face_hover: [0.86, 0.89, 0.95],
+    border: [0.7, 0.7, 0.75],
+    tooltip: [1.0, 1.0, 0.92],
+};
+
+fn theme(app: &App) -> &'static Theme {
+    if app.light { &LIGHT } else { &DARK }
+}
+
+const SEE_THROUGH: f64 = 0.45;
+
 const ACCENT: Rgb = [0.2, 0.6, 0.95];
 const WARN: Rgb = [1.0, 0.65, 0.2];
 const LINE: Rgb = [0.85, 0.35, 0.3];
 const POINT: Rgb = [0.45, 0.6, 0.95];
+const FORCE: Rgb = [0.95, 0.65, 0.05];
 
-/// Texto en ISO-8859-1 (fuentes del servidor); lo que no cabe se sustituye por `?`.
 fn latin1(s: &str) -> Vec<u8> {
     s.chars()
         .map(|c| u8::try_from(u32::from(c)).unwrap_or(b'?'))
         .collect()
 }
 
-/// Peticiones de dibujo con el contexto gráfico compartido; solo cambia color o grosor si hace
-/// falta (cada cambio es una petición que viaja por la red).
 struct Canvas<'a> {
     conn: &'a RustConnection,
     gc: Gcontext,
@@ -168,16 +205,15 @@ impl Canvas<'_> {
         let pts: Vec<Point> = pts
             .iter()
             .map(|&(x, y)| Point {
-                x: x as i16,
-                y: y as i16,
+                x: x.clamp(-32000, 32000) as i16,
+                y: y.clamp(-32000, 32000) as i16,
             })
             .collect();
         self.conn
-            .fill_poly(d, self.gc, PolyShape::CONVEX, CoordMode::ORIGIN, &pts)?;
+            .fill_poly(d, self.gc, PolyShape::COMPLEX, CoordMode::ORIGIN, &pts)?;
         Ok(())
     }
 
-    /// Texto con la línea base en `y`, sin fondo.
     fn text(&self, d: Drawable, x: i32, y: i32, s: &str, rgb: Rgb) -> Res<()> {
         self.set(rgb, self.width.get())?;
         let bytes = latin1(s);
@@ -195,7 +231,6 @@ impl Canvas<'_> {
     }
 }
 
-/// Fuente monoespaciada del servidor: id, ancho de carácter, ascenso y alto de línea.
 #[derive(Clone, Copy)]
 struct FontInfo {
     id: Font,
@@ -204,8 +239,6 @@ struct FontInfo {
     line_h: i32,
 }
 
-/// Abre la primera fuente disponible de `names` (las fuentes "misc fixed" vienen con casi todo
-/// servidor X: Xorg, Xwayland, XQuartz, VcXsrv).
 fn open_font(conn: &RustConnection, names: &[&str]) -> Res<FontInfo> {
     for name in names {
         let id = conn.generate_id()?;
@@ -223,29 +256,24 @@ fn open_font(conn: &RustConnection, names: &[&str]) -> Res<FontInfo> {
     Err(format!("ninguna fuente disponible en el servidor X: {names:?}").into())
 }
 
-/// Extensión XRender: imagen del pixmap de fondo, formatos ARGB32 y de máscara A8, y caché de
-/// esferas ya dibujadas en el servidor.
 struct Render {
     back: Picture,
+    layer: Pixmap,
+    layer_picture: Picture,
+    layer_mask: Picture,
     format: Pictformat,
     argb32: Pictformat,
     a8: Pictformat,
-    /// (color, diámetro en px, nivel de profundidad) → (pixmap, imagen, diámetro).
     sprites: RefCell<SpriteCache>,
-    /// Ídem para las texturas de cilindro de los enlaces (diámetro = grosor).
     sticks: RefCell<SpriteCache>,
 }
 
-/// (color RGB, tamaño en px, nivel de profundidad) → (pixmap, imagen, tamaño).
 type SpriteCache = HashMap<(u32, u16, u8), (Pixmap, Picture, u16)>;
 
-/// Largo (px) de la textura de cilindro; se estira a lo largo de cada enlace.
 const STICK_LEN: u16 = 16;
 
-/// Máximo de esferas en caché; al superarlo se vacía (p. ej. tras mucho zoom).
 const MAX_SPRITES: usize = 512;
 
-/// Prepara XRender si el servidor lo tiene (versión ≥ 0.10, con degradados).
 fn init_render(conn: &RustConnection, screen_num: usize, visual: Visualid) -> Res<Option<Render>> {
     if conn
         .extension_information(render::X11_EXTENSION_NAME)?
@@ -278,6 +306,9 @@ fn init_render(conn: &RustConnection, screen_num: usize, visual: Visualid) -> Re
     Ok(match (format, a8, argb32) {
         (Some(format), Some(a8), Some(argb32)) => Some(Render {
             back: 0,
+            layer: 0,
+            layer_picture: 0,
+            layer_mask: 0,
             format,
             argb32: argb32.id,
             a8: a8.id,
@@ -332,6 +363,14 @@ impl Window<'_> {
                 .polymode(PolyMode::IMPRECISE);
             self.conn
                 .render_create_picture(r.back, self.back, r.format, &aux)?;
+            self.conn
+                .create_pixmap(self.depth, r.layer, self.win, w, h)?;
+            self.conn.render_create_picture(
+                r.layer_picture,
+                r.layer,
+                r.format,
+                &CreatePictureAux::new(),
+            )?;
         }
         Ok(())
     }
@@ -339,14 +378,14 @@ impl Window<'_> {
     fn free_pixmaps(&self) -> Res<()> {
         if let Some(r) = &self.render {
             self.conn.render_free_picture(r.back)?;
+            self.conn.render_free_picture(r.layer_picture)?;
+            self.conn.free_pixmap(r.layer)?;
         }
         self.conn.free_pixmap(self.back)?;
         self.conn.free_pixmap(self.plot)?;
         Ok(())
     }
 
-    /// Esfera suavizada: se dibuja una vez por (color, tamaño, profundidad) en una imagen ARGB del
-    /// servidor y en cada fotograma solo se copia (una petición de 36 bytes).
     fn sphere_aa(&self, r: &Render, x: f64, y: f64, rad: f64, rgb: Rgb, fade: f64) -> Res<()> {
         if rad < 0.5 {
             return Ok(());
@@ -391,8 +430,6 @@ impl Window<'_> {
         Ok(())
     }
 
-    /// Imagen ARGB transparente con la esfera: degradado radial (brillo arriba a la izquierda,
-    /// borde oscuro) recortado por un círculo con bordes suavizados.
     fn make_sprite(&self, r: &Render, d: u16, rgb: Rgb, fade: f64) -> Res<(Pixmap, Picture, u16)> {
         let (pm, pic) = (self.conn.generate_id()?, self.conn.generate_id()?);
         self.conn.create_pixmap(32, pm, self.win, d, d)?;
@@ -436,7 +473,6 @@ impl Window<'_> {
             let a = std::f64::consts::TAU * i as f64 / n as f64;
             pts.push(pfx((x + rad * a.cos(), y + rad * a.sin())));
         }
-        // El origen del degradado coincide con el primer punto (truncado), como pide XRender.
         let (sx, sy) = ((pts[0].x >> 16) as i16, (pts[0].y >> 16) as i16);
         self.conn
             .render_tri_fan(PictOp::OVER, g, pic, r.a8, sx, sy, &pts)?;
@@ -444,11 +480,6 @@ impl Window<'_> {
         Ok((pm, pic, d))
     }
 
-    /// Medio enlace suavizado: una textura de cilindro (dibujada una vez por color, grosor y
-    /// profundidad) que se gira y estira con una transformación y se copia con filtro bilineal,
-    /// que suaviza los bordes. Dos peticiones pequeñas por medio enlace. Rasterizar triángulos
-    /// suavizados en cada fotograma era mucho más lento en el servidor (medido: de 1600 a 6–16 fps
-    /// con 32 átomos).
     #[allow(clippy::too_many_arguments)]
     fn bond_aa(
         &self,
@@ -465,7 +496,6 @@ impl Window<'_> {
             return Ok(());
         }
         let (ux, uy) = (dx / len, dy / len);
-        // Un poco más allá del punto medio, para que no se vea la unión con la otra mitad.
         let len = len + 0.75;
         let thick = w.round().max(1.0) as u16;
         let level = (fade * 16.0).round() as u8;
@@ -489,8 +519,6 @@ impl Window<'_> {
                 t
             }
         };
-        // Normal que apunta del lado iluminado (arriba a la izquierda) al oscuro: la fila 0 de
-        // la textura es el lado iluminado.
         let (mut nx, mut ny) = (-uy, ux);
         if nx + ny < 0.0 {
             (nx, ny) = (-nx, -ny);
@@ -506,8 +534,6 @@ impl Window<'_> {
         let y0 = corners.iter().map(|c| c.1).fold(f64::MAX, f64::min).floor() - 1.0;
         let x1 = corners.iter().map(|c| c.0).fold(f64::MIN, f64::max).ceil() + 1.0;
         let y1 = corners.iter().map(|c| c.1).fold(f64::MIN, f64::max).ceil() + 1.0;
-        // Destino → textura, en coordenadas relativas a la esquina (x0, y0) del rectángulo:
-        // u = (p − a)·dir · STICK_LEN / len,  v = (p − a)·n + h/2.
         let (ax, ay) = (a.0 - x0, a.1 - y0);
         let s = f64::from(STICK_LEN) / len;
         let t = render::Transform {
@@ -539,8 +565,6 @@ impl Window<'_> {
         Ok(())
     }
 
-    /// Textura de cilindro: `STICK_LEN` × (grosor + 2) px, filas de color según la normal del
-    /// cilindro (fila 0 = lado iluminado) y una fila transparente arriba y abajo.
     fn make_stick(
         &self,
         r: &Render,
@@ -568,7 +592,6 @@ impl Window<'_> {
         self.conn
             .render_fill_rectangles(PictOp::SRC, pic, clear, &[all])?;
         for row in 0..thick {
-            // s ∈ (−1, 1): −1 lado iluminado, 1 lado oscuro; c = componente hacia el observador.
             let s = (f64::from(row) + 0.5) / f64::from(thick) * 2.0 - 1.0;
             let c = (1.0 - s * s).max(0.0).sqrt();
             let diffuse = (0.55 * -s + 0.83 * c).max(0.0);
@@ -588,41 +611,47 @@ impl Window<'_> {
         Ok((pm, pic, h))
     }
 
-    /// Capa estática de la gráfica: fondo, ejes con marcas y valores, línea y puntos.
     fn draw_plot_layer(&self, app: &App) -> Res<()> {
+        let th = theme(app);
         let c = &self.canvas;
         let d = self.plot;
         let l = &app.layout;
         let off = l.plot.y;
         let local = |r: Rect| Rect { y: r.y - off, ..r };
-        c.rect(d, local(l.plot), BG_PLOT)?;
+        c.rect(d, local(l.plot), th.plot)?;
         c.rect(
             d,
             Rect {
                 h: 1,
                 ..local(l.plot)
             },
-            GRID,
+            th.grid,
         )?;
         let Some(m) = app.plot_map() else {
             let msg = "No structure has an energy: nothing to plot.";
             c.set_font(self.font.id)?;
-            return c.text(d, 20, l.plot.h / 2, msg, WEAK);
+            return c.text(d, 20, l.plot.h / 2, msg, th.weak);
         };
         let a = local(m.area);
         let (cw, lh, asc) = (self.font.char_w, self.font.line_h, self.font.ascent);
         c.set_font(self.font.id)?;
-        // Marcas de energía (eje y) con su valor; relativas a Emin si las absolutas son largas.
         let r = m.e_ref.unwrap_or(0.0);
-        let (ticks, step) = nice_ticks(m.e.0 - r, m.e.1 - r, (a.h / (2 * lh)).max(2) as usize);
+        let (ticks, step) = nice_ticks(m.e.0 - r, m.e.1 - r, (a.h / (2 * lh)).max(1) as usize);
+        let k = tick_exponent(&ticks, step);
+        let f = 10f64.powi(k);
         let mut grid = Vec::new();
         for &e in &ticks {
             let y = (m.y(e + r) - f64::from(off)).round() as i32;
             grid.push(seg(a.x, y, a.x + a.w, y));
-            let t = tick_text(e, step);
-            c.text(d, a.x - 6 - cw * t.len() as i32, y + asc / 2 - 1, &t, WEAK)?;
+            let t = tick_text(e / f, step / f);
+            c.text(
+                d,
+                a.x - 6 - cw * t.len() as i32,
+                y + asc / 2 - 1,
+                &t,
+                th.weak,
+            )?;
         }
-        // Marcas de n (eje x), enteras.
         let (nt, nstep) = nice_ticks(m.n.0, m.n.1, (a.w / (cw * 9)).max(2) as usize);
         for &n in nt.iter().filter(|&&n| n >= 1.0 && n.fract() == 0.0) {
             let x = m.x(n).round() as i32;
@@ -633,10 +662,10 @@ impl Window<'_> {
                 x - cw * t.len() as i32 / 2,
                 a.y + a.h + asc + 4,
                 &t,
-                WEAK,
+                th.weak,
             )?;
         }
-        c.segments(d, &grid, 1, GRID)?;
+        c.segments(d, &grid, 1, th.grid)?;
         c.outline(
             d,
             Rect {
@@ -645,17 +674,21 @@ impl Window<'_> {
                 w: a.w + 2,
                 h: a.h + 2,
             },
-            WEAK,
+            th.weak,
         )?;
+        let times = if k == 0 {
+            String::new()
+        } else {
+            format!(" (×10^{k})")
+        };
         match m.e_ref {
             Some(e_min) => {
-                let label = format!("E - Emin    (Emin = {e_min})");
-                c.text(d, 8, a.y - lh / 2 - 4, &label, TEXT)?
+                let label = format!("E - Emin{times}    (Emin = {e_min})");
+                c.text(d, 8, a.y - lh / 2 - 4, &label, th.text)?
             }
-            None => c.text(d, 8, a.y + asc, "E", TEXT)?,
+            None => c.text(d, 8, a.y + asc, &format!("E{times}"), th.text)?,
         }
-        c.text(d, a.x + a.w + cw / 2, a.y + a.h + asc + 4, "n", TEXT)?;
-        // Datos: línea y, si no están demasiado juntos, puntos.
+        c.text(d, a.x + a.w + cw / 2, a.y + a.h + asc + 4, "n", th.text)?;
         let pts: Vec<(f64, f64)> = app
             .loaded
             .structures
@@ -678,16 +711,13 @@ impl Window<'_> {
         Ok(())
     }
 
-    fn draw_frame(&self, app: &mut App) -> Res<()> {
-        let c = &self.canvas;
-        let d = self.back;
-        let l = app.layout.clone();
-        let (cw, asc) = (self.font.char_w, self.font.ascent);
-
-        // Vista 3D.
-        c.rect(d, l.view, BG_VIEW)?;
-        let smooth = self.render.as_ref().filter(|_| app.smooth);
-        for shape in app.scene() {
+    fn draw_shapes<'s>(
+        &self,
+        shapes: impl Iterator<Item = &'s Shape3d>,
+        smooth: Option<&Render>,
+    ) -> Res<()> {
+        let (c, d) = (&self.canvas, self.back);
+        for &shape in shapes {
             match (shape, smooth) {
                 (Shape3d::Sphere { x, y, r, rgb, fade }, Some(rd)) => {
                     self.sphere_aa(rd, x, y, r, rgb, fade)?
@@ -713,31 +743,88 @@ impl Window<'_> {
                     },
                     None,
                 ) => bond(c, d, from, to, width, rgb, fade)?,
+                (Shape3d::Quad { pts, rgb }, _) => c.polygon(
+                    d,
+                    &pts.map(|(x, y)| (x.round() as i32, y.round() as i32)),
+                    rgb,
+                )?,
+                (Shape3d::Arrow { from, to, head }, _) => {
+                    c.line(d, from, to, 2, FORCE)?;
+                    c.polygon(
+                        d,
+                        &head.map(|(x, y)| (x.round() as i32, y.round() as i32)),
+                        FORCE,
+                    )?
+                }
             }
+        }
+        Ok(())
+    }
+
+    fn draw_frame(&self, app: &mut App) -> Res<()> {
+        let th = theme(app);
+        let c = &self.canvas;
+        let d = self.back;
+        let l = app.layout.clone();
+        let (cw, asc) = (self.font.char_w, self.font.ascent);
+
+        c.rect(d, l.view, th.view)?;
+        let smooth = self.render.as_ref().filter(|_| app.smooth);
+        let scene = app.scene();
+        let is_face = |s: &Shape3d| matches!(s, Shape3d::Quad { .. });
+        let layer = smooth.filter(|_| app.transparent && scene.iter().any(is_face));
+        if let Some(r) = layer {
+            self.draw_shapes(scene.iter().filter(|s| !is_face(s)), smooth)?;
+            let v = l.view;
+            let (x, y) = (v.x as i16, v.y as i16);
+            let (w, h) = (v.w as u16, v.h as u16);
+            self.conn.copy_area(d, r.layer, c.gc, x, y, x, y, w, h)?;
+            c.rect(d, v, th.view)?;
+        }
+        self.draw_shapes(scene.iter(), smooth)?;
+        if let Some(r) = layer {
+            let v = l.view;
+            let (x, y) = (v.x as i16, v.y as i16);
+            self.conn.render_composite(
+                PictOp::OVER,
+                r.layer_picture,
+                r.layer_mask,
+                r.back,
+                x,
+                y,
+                0,
+                0,
+                x,
+                y,
+                v.w as u16,
+                v.h as u16,
+            )?;
         }
         c.set_font(self.font.id)?;
         let hint = "drag: rotate · right button: pan · wheel: zoom · double-click: reset";
-        c.text(d, l.view.x + 8, l.view.y + l.view.h - 8, hint, WEAK)?;
+        c.text(d, l.view.x + 8, l.view.y + l.view.h - 8, hint, th.weak)?;
 
-        // Columna de controles (antes que la gráfica: sus tooltips quedan encima).
-        c.rect(d, l.panel, BG_PANEL)?;
-        c.rect(d, Rect { w: 1, ..l.panel }, GRID)?;
+        c.rect(d, l.panel, th.panel)?;
+        c.rect(d, Rect { w: 1, ..l.panel }, th.grid)?;
         for &(item, r) in &l.items {
             let ty = r.y + (r.h + asc) / 2 - 1;
             let text = match item {
                 BarItem::Speed => speed_text(app.player.speed),
                 BarItem::Tolerance => tolerance_text(app.bond_tolerance),
+                BarItem::Iso => iso_text(app.iso),
+                BarItem::Title(t) => {
+                    c.text(d, r.x + 2, r.y + asc, t, th.weak)?;
+                    continue;
+                }
                 BarItem::Button(b) => {
                     self.button(app, b, r)?;
                     continue;
                 }
             };
-            // Centrado entre los botones − y +.
             let tx = r.x + (r.w - cw * text.len() as i32) / 2;
-            c.text(d, tx, ty, &text, TEXT)?;
+            c.text(d, tx, ty, &text, th.text)?;
         }
 
-        // Gráfica: capa estática + estructura actual + punto bajo el puntero.
         self.conn.copy_area(
             self.plot,
             d,
@@ -749,13 +836,20 @@ impl Window<'_> {
             l.plot.w.max(1) as u16,
             l.plot.h.max(1) as u16,
         )?;
-        if app.hover == Hover::Splitter {
-            let edge = Rect {
-                y: l.plot.y - 1,
-                h: 3,
-                ..l.plot
+        if let Hover::Edge(edge) = app.hover {
+            let strip = match edge {
+                Edge::Plot => Rect {
+                    y: l.plot.y - 1,
+                    h: 3,
+                    ..l.plot
+                },
+                Edge::Panel => Rect {
+                    x: l.panel.x - 1,
+                    w: 3,
+                    ..l.panel
+                },
             };
-            c.rect(d, edge, ACCENT)?;
+            c.rect(d, strip, ACCENT)?;
         }
         let structures = &app.loaded.structures;
         if let Some(m) = app.plot_map() {
@@ -770,14 +864,11 @@ impl Window<'_> {
                 && let Some(e) = structures[i].energy
             {
                 let p = (m.x((i + 1) as f64), m.y(e));
-                c.circles(d, &[p], 4.5, TEXT)?;
+                c.circles(d, &[p], 4.5, th.text)?;
                 let s = &structures[i];
                 let mut lines = vec![format!("n = {}", i + 1), format!("E = {e}")];
                 if let Some(e_min) = m.e_ref {
-                    // Sin el ruido de la resta en coma flotante (1.8200000000651926).
-                    let rel = format!("{:.6}", e - e_min);
-                    let rel = rel.trim_end_matches('0').trim_end_matches('.');
-                    lines.push(format!("E - Emin = {rel}"));
+                    lines.push(format!("E - Emin = {}", short_number(e - e_min)));
                 }
                 if !s.label.is_empty() {
                     lines.push(s.label.clone());
@@ -786,8 +877,7 @@ impl Window<'_> {
             }
         }
 
-        // Cabecera.
-        c.rect(d, l.header, BG_PANEL)?;
+        c.rect(d, l.header, th.panel)?;
         let s = app.structure();
         let y = l.header.y + (l.header.h + asc) / 2 - 1;
         let mut x = 10;
@@ -801,19 +891,20 @@ impl Window<'_> {
             c,
             &self.bold,
             &format!("{} / {}", app.player.current + 1, app.player.len),
-            TEXT,
+            th.text,
         )?;
-        put(c, &self.bold, &s.formula(), TEXT)?;
-        put(c, &self.font, &format!("{} atoms", s.atoms.len()), TEXT)?;
+        put(c, &self.bold, &s.formula(), th.text)?;
+        put(c, &self.font, &format!("{} atoms", s.atoms.len()), th.text)?;
         match s.energy {
-            Some(e) => put(c, &self.bold, &format!("E = {e}"), TEXT)?,
+            Some(e) => put(c, &self.bold, &format!("E = {e}"), th.text)?,
+            None if s.grid.is_some() => {}
             None => put(c, &self.font, "no energy", WARN)?,
         }
         if !s.label.is_empty() {
-            put(c, &self.font, &s.label, TEXT)?;
+            put(c, &self.font, &s.label, th.text)?;
         }
         let file = s.path.file_name().unwrap_or_default().to_string_lossy();
-        put(c, &self.font, &format!("{file}:{}", s.line), WEAK)?;
+        put(c, &self.font, &format!("{file}:{}", s.line), th.weak)?;
         let n = app.loaded.warnings.len();
         if n > 0 {
             let plural = if n == 1 { "" } else { "s" };
@@ -825,7 +916,6 @@ impl Window<'_> {
             )?;
         }
 
-        // Átomo bajo el puntero.
         if let Hover::Atom(i) = app.hover {
             let a = &app.structure().atoms[i];
             let text = format!(
@@ -836,12 +926,15 @@ impl Window<'_> {
                 a.pos[1],
                 a.pos[2]
             );
-            self.tooltip(app, app.pointer.0, app.pointer.1, &[text])?;
+            let mut lines = vec![text];
+            lines.extend(column_lines(app.structure(), i));
+            self.tooltip(app, app.pointer.0, app.pointer.1, &lines)?;
         }
         Ok(())
     }
 
     fn button(&self, app: &App, b: Button, r: Rect) -> Res<()> {
+        let th = theme(app);
         let c = &self.canvas;
         let d = self.back;
         let hovered = app.hover == Hover::Button(b);
@@ -853,6 +946,9 @@ impl Window<'_> {
             Button::FixOrientation => {
                 Some((app.fixed_orientation.is_some(), FIX_ORIENTATION_LABEL))
             }
+            Button::Light => Some((app.light, LIGHT_LABEL)),
+            Button::Transparent => Some((app.transparent, TRANSPARENT_LABEL)),
+            Button::Forces => Some((app.forces, FORCES_LABEL)),
             _ => None,
         };
         let (cw, asc) = (self.font.char_w, self.font.ascent);
@@ -865,30 +961,25 @@ impl Window<'_> {
                 w: s,
                 h: s,
             };
-            c.rect(d, bx, if on { ACCENT } else { [0.2, 0.2, 0.22] })?;
-            c.outline(d, bx, if hovered { TEXT } else { WEAK })?;
+            c.rect(d, bx, if on { ACCENT } else { th.unchecked })?;
+            c.outline(d, bx, if hovered { th.text } else { th.weak })?;
             if on {
                 let (x0, y0) = (bx.x + 3, bx.y + s / 2);
                 let tick = [
                     seg(x0, y0, x0 + s / 4, bx.y + s - 4),
                     seg(x0 + s / 4, bx.y + s - 4, bx.x + s - 3, bx.y + 3),
                 ];
-                c.segments(d, &tick, 2, TEXT)?;
+                c.segments(d, &tick, 2, [1.0, 1.0, 1.0])?;
             }
-            return c.text(d, bx.x + s + cw / 2 + 2, ty, label, TEXT);
+            return c.text(d, bx.x + s + cw / 2 + 2, ty, label, th.text);
         }
-        let face = if hovered {
-            [0.26, 0.26, 0.3]
-        } else {
-            [0.19, 0.19, 0.21]
-        };
+        let face = if hovered { th.face_hover } else { th.face };
         c.rect(d, r, face)?;
-        c.outline(d, r, [0.32, 0.32, 0.36])?;
-        // Reproducción: icono en un cuadrado a la izquierda y el nombre a su lado.
+        c.outline(d, r, th.border)?;
         let label = playback_label(b, app.player.playing);
         let cx = match label {
             Some(text) => {
-                c.text(d, r.x + r.h + cw / 2, ty, text, TEXT)?;
+                c.text(d, r.x + r.h + cw / 2, ty, text, th.text)?;
                 r.x + r.h / 2 + 2
             }
             None => r.x + r.w / 2,
@@ -905,10 +996,10 @@ impl Window<'_> {
         };
         match b {
             Button::First => {
-                c.rect(d, bar(cx - k - 3), TEXT)?;
-                c.polygon(d, &left(cx + 1), TEXT)?;
+                c.rect(d, bar(cx - k - 3), th.text)?;
+                c.polygon(d, &left(cx + 1), th.text)?;
             }
-            Button::Prev => c.polygon(d, &left(cx), TEXT)?,
+            Button::Prev => c.polygon(d, &left(cx), th.text)?,
             Button::Play if app.player.playing => {
                 c.rect(
                     d,
@@ -918,7 +1009,7 @@ impl Window<'_> {
                         w: k - 1,
                         h: 2 * k + 1,
                     },
-                    TEXT,
+                    th.text,
                 )?;
                 c.rect(
                     d,
@@ -928,16 +1019,16 @@ impl Window<'_> {
                         w: k - 1,
                         h: 2 * k + 1,
                     },
-                    TEXT,
+                    th.text,
                 )?;
             }
             Button::Play => c.polygon(d, &right(cx + 1), ACCENT)?,
-            Button::Next => c.polygon(d, &right(cx), TEXT)?,
+            Button::Next => c.polygon(d, &right(cx), th.text)?,
             Button::Last => {
-                c.polygon(d, &right(cx - 1), TEXT)?;
-                c.rect(d, bar(cx + k + 2), TEXT)?;
+                c.polygon(d, &right(cx - 1), th.text)?;
+                c.rect(d, bar(cx + k + 2), th.text)?;
             }
-            Button::Slower | Button::LessTolerance => c.rect(
+            Button::Slower | Button::LessTolerance | Button::LessIso => c.rect(
                 d,
                 Rect {
                     x: cx - k,
@@ -945,9 +1036,9 @@ impl Window<'_> {
                     w: 2 * k + 1,
                     h: 2,
                 },
-                TEXT,
+                th.text,
             )?,
-            Button::Faster | Button::MoreTolerance => {
+            Button::Faster | Button::MoreTolerance | Button::MoreIso => {
                 c.rect(
                     d,
                     Rect {
@@ -956,7 +1047,7 @@ impl Window<'_> {
                         w: 2 * k + 1,
                         h: 2,
                     },
-                    TEXT,
+                    th.text,
                 )?;
                 c.rect(
                     d,
@@ -966,20 +1057,23 @@ impl Window<'_> {
                         w: 2,
                         h: 2 * k + 1,
                     },
-                    TEXT,
+                    th.text,
                 )?;
             }
             Button::Loop
             | Button::MetalMetal
             | Button::Smooth
             | Button::RelativeEnergy
-            | Button::FixOrientation => {}
+            | Button::FixOrientation
+            | Button::Light
+            | Button::Transparent
+            | Button::Forces => {}
         }
         Ok(())
     }
 
-    /// Recuadro con texto junto a (x, y), dentro de la ventana.
     fn tooltip(&self, app: &App, x: i32, y: i32, lines: &[String]) -> Res<()> {
+        let th = theme(app);
         let c = &self.canvas;
         let (cw, lh, asc) = (self.font.char_w, self.font.line_h, self.font.ascent);
         let w = lines
@@ -994,11 +1088,11 @@ impl Window<'_> {
         let bx = (x + 14).min(l.w - w - 2).max(2);
         let by = (y - h - 10).max(2);
         let r = Rect { x: bx, y: by, w, h };
-        c.rect(self.back, r, [0.16, 0.16, 0.18])?;
-        c.outline(self.back, r, WEAK)?;
+        c.rect(self.back, r, th.tooltip)?;
+        c.outline(self.back, r, th.weak)?;
         c.set_font(self.font.id)?;
         for (k, t) in lines.iter().enumerate() {
-            c.text(self.back, bx + 6, by + 4 + asc + k as i32 * lh, t, TEXT)?;
+            c.text(self.back, bx + 6, by + 4 + asc + k as i32 * lh, t, th.text)?;
         }
         Ok(())
     }
@@ -1026,8 +1120,6 @@ fn shade(rgb: Rgb, k: f64, spec: f64) -> Rgb {
     rgb.map(|v| v * k + spec)
 }
 
-/// Esfera: borde oscuro y círculos concéntricos cada vez más claros, desplazados hacia la luz
-/// (arriba a la izquierda), con un brillo final.
 fn sphere(c: &Canvas, d: Drawable, x: f64, y: f64, r: f64, rgb: Rgb, fade: f64) -> Res<()> {
     let rings = (r / 2.5).clamp(5.0, 16.0) as usize;
     c.circles(d, &[(x, y)], r, shade(rgb, 0.18 * fade, 0.0))?;
@@ -1042,7 +1134,6 @@ fn sphere(c: &Canvas, d: Drawable, x: f64, y: f64, r: f64, rgb: Rgb, fade: f64) 
     Ok(())
 }
 
-/// Medio enlace: trazo oscuro, uno medio y un reflejo claro hacia la luz.
 fn bond(
     c: &Canvas,
     d: Drawable,
@@ -1058,7 +1149,6 @@ fn bond(
         return Ok(());
     }
     let (px, py) = (-dy / len, dx / len);
-    // Lado de la normal que mira a la luz (arriba a la izquierda).
     let side = if px + py > 0.0 { -1.0 } else { 1.0 };
     for (frac, off, k) in [(1.0, 0.0, 0.42), (0.6, 0.12, 0.8), (0.22, 0.22, 1.15)] {
         let o = side * off * w;
@@ -1075,15 +1165,10 @@ fn bond(
     Ok(())
 }
 
-/// Abre la ventana y atiende eventos hasta que se cierra.
 pub fn run(loaded: Loaded, title: &str, options: Options) -> Result<(), String> {
     run_inner(loaded, title, options).map_err(|e| e.to_string())
 }
 
-/// Conecta con el servidor X de `$DISPLAY`. x11rb 0.14 ignora la ruta de un `DISPLAY` de tipo
-/// launchd (XQuartz en macOS: `/private/tmp/com.apple.launchd.…/org.xquartz:0`) y prueba
-/// `/tmp/.X11-unix/X0`, que no existe hasta que XQuartz arranca. Aquí se conecta a esa ruta.
-// ponytail: quitar al pasar a una versión de x11rb con la corrección (ya está en su rama master).
 fn connect() -> Result<(RustConnection, usize), Box<dyn std::error::Error>> {
     #[cfg(unix)]
     if let Some(path) = std::env::var("DISPLAY")
@@ -1127,10 +1212,23 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
     let mut render = init_render(&conn, screen_num, screen.root_visual)?;
     if let Some(r) = &mut render {
         r.back = conn.generate_id()?;
+        r.layer = conn.generate_id()?;
+        r.layer_picture = conn.generate_id()?;
+        r.layer_mask = conn.generate_id()?;
+        let alpha = (SEE_THROUGH * 65535.0) as u16;
+        let color = render::Color {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha,
+        };
+        conn.render_create_solid_fill(r.layer_mask, color)?;
     }
-    app.smooth = options.smooth && render.is_some();
-    if options.smooth && render.is_none() {
+    app.configure(&options);
+    if app.smooth && render.is_none() {
         eprintln!("mole: warning: the X server has no XRender >= 0.10; using basic drawing");
+        app.smooth = false;
+        app.transparent = false;
     }
 
     let win = conn.generate_id()?;
@@ -1175,9 +1273,6 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
         AtomEnum::STRING,
         b"mole\0MOLE\0",
     )?;
-    // Ícono de la ventana (sin él, los docks muestran uno genérico): `assets/mole.svg` en 48 y
-    // 128 px, como [ancho, alto, píxeles ARGB…] en u32 little-endian. Se regenera con cairosvg
-    // y Pillow si cambia el SVG.
     const ICON: &[u8] = include_bytes!("../assets/icon.argb");
     let icon: Vec<u32> = ICON
         .as_chunks()
@@ -1230,7 +1325,6 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
     };
     window.make_pixmaps(&app.layout)?;
 
-    // Teclado: keycode → keysym (primera columna).
     let setup = conn.setup();
     let (min_kc, max_kc) = (setup.min_keycode, setup.max_keycode);
     let map = conn
@@ -1249,14 +1343,6 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
         .and_then(|n| n.parse().ok());
     #[cfg(debug_assertions)]
     let capture = std::env::var("MOLE_CAPTURE").ok();
-    #[cfg(debug_assertions)]
-    if let Some(n) = std::env::var("MOLE_CAPTURE_N")
-        .ok()
-        .and_then(|n| n.parse::<usize>().ok())
-    {
-        app.player.go(n.saturating_sub(1));
-    }
-    // `MOLE_CAPTURE_DRAG=dx,dy`: arrastre simulado en la vista 3D antes de capturar.
     #[cfg(debug_assertions)]
     if let Some((dx, dy)) = std::env::var("MOLE_CAPTURE_DRAG").ok().and_then(|s| {
         let (a, b) = s.split_once(',')?;
@@ -1278,31 +1364,36 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
 
     let t0 = Instant::now();
     let now = || t0.elapsed().as_secs_f64();
-    // Cursor ↕ sobre el borde entre la vista y la gráfica (fuente estándar "cursor" de X11,
-    // glifo XC_sb_v_double_arrow = 116 y su máscara, 117).
-    let resize_cursor = conn.generate_id()?;
     let cursor_font = conn.generate_id()?;
     conn.open_font(cursor_font, b"cursor")?;
-    conn.create_glyph_cursor(
-        resize_cursor,
-        cursor_font,
-        cursor_font,
-        116,
-        117,
-        0,
-        0,
-        0,
-        0xffff,
-        0xffff,
-        0xffff,
-    )?;
+    let make_cursor = |glyph: u16| -> Res<u32> {
+        let id = conn.generate_id()?;
+        conn.create_glyph_cursor(
+            id,
+            cursor_font,
+            cursor_font,
+            glyph,
+            glyph + 1,
+            0,
+            0,
+            0,
+            0xffff,
+            0xffff,
+            0xffff,
+        )?;
+        Ok(id)
+    };
+    let (resize_v, resize_h) = (make_cursor(116)?, make_cursor(108)?);
+    let edge_of = |h: Hover| match h {
+        Hover::Edge(e) => Some(e),
+        _ => None,
+    };
     conn.close_font(cursor_font)?;
     let (mut dirty, mut plot_dirty) = (true, true);
     let mut pending_sync = None;
     let mut frames = 0usize;
     let mut bench_start = 0.0;
     loop {
-        // Atender todos los eventos pendientes y dibujar una sola vez; sin nada que hacer, esperar.
         let before = app.player.current;
         let wait = app.player.tick(now());
         dirty |= app.player.current != before;
@@ -1355,24 +1446,24 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
                 _ => None,
             };
             if let Some(input) = input {
-                let relative = app.relative_energy;
+                let plot_look = |a: &App| (a.relative_energy, a.light);
+                let old_look = plot_look(&app);
                 let size = |l: &Layout| (l.w, l.h, l.plot);
                 let old_size = size(&app.layout);
-                let old_cursor = app.hover == Hover::Splitter;
+                let old_edge = edge_of(app.hover);
                 dirty |= app.handle(input, now());
-                plot_dirty |= app.relative_energy != relative;
-                // Ventana redimensionada o borde de la gráfica arrastrado: pixmaps nuevos.
+                plot_dirty |= plot_look(&app) != old_look;
                 if size(&app.layout) != old_size {
                     window.free_pixmaps()?;
                     window.make_pixmaps(&app.layout)?;
                     plot_dirty = true;
                 }
-                let on_splitter = app.hover == Hover::Splitter;
-                if on_splitter != old_cursor {
-                    let cursor = if on_splitter {
-                        resize_cursor
-                    } else {
-                        x11rb::NONE
+                let edge = edge_of(app.hover);
+                if edge != old_edge {
+                    let cursor = match edge {
+                        Some(Edge::Plot) => resize_v,
+                        Some(Edge::Panel) => resize_h,
+                        None => x11rb::NONE,
                     };
                     let aux = ChangeWindowAttributesAux::new().cursor(cursor);
                     conn.change_window_attributes(win, &aux)?;
@@ -1411,7 +1502,6 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
         window.draw_frame(&mut app)?;
         let l = &app.layout;
         conn.copy_area(window.back, win, gc, 0, 0, 0, 0, l.w as u16, l.h as u16)?;
-        // Como mucho un fotograma en vuelo: si la red va lenta no se acumulan órdenes.
         let sync = conn.get_input_focus()?;
         if let Some(prev) = pending_sync.replace(sync) {
             x11rb::cookie::Cookie::reply(prev)?;
@@ -1429,8 +1519,6 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
     }
 }
 
-/// Solo en compilaciones de depuración: `MOLE_CAPTURE=salida.ppm [MOLE_CAPTURE_N=k]` guarda el
-/// fotograma y cierra, para revisar la interfaz sin interacción.
 #[cfg(debug_assertions)]
 fn save_capture(
     conn: &RustConnection,

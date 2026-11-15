@@ -1,5 +1,3 @@
-//! Línea de comandos de `mole`: ayuda, banner, `--list` y códigos de salida.
-
 use mole_core::{ErrorKind, Loaded, Structure, load};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -13,20 +11,30 @@ Files:
   .xyz          one or more structures; energy taken from the comment line
                 (includes ORCA *_trj.xyz trajectories)
   .out, .log    Gaussian or ORCA output: final geometry and its energy
+  .cube, .cub   Gaussian cube: atoms and an isosurface (red +, blue -)
 
 Options:
-  --list        print the structure table (tab-separated) and exit without opening a window
-  --smooth      antialiased drawing with XRender (also a checkbox in the window)
-  -h, --help    show this help
-  -V, --version show the version
+  --list              print the structure table (tab-separated) and exit without opening a window
+  --frame N           start at structure N (1 = first)
+  --smooth            antialiased drawing with XRender
+  --light             white theme
+  --absolute          plot absolute energies instead of E - Emin
+  --fix-orientation   turn every structure to the orientation of the first one shown
+  --tol T             bond tolerance, 0.80 to 1.60 (default 1.25)
+  --no-mm             do not draw metal-metal bonds
+  --iso V             isovalue of cube surfaces (lobes at +V and -V)
+  --transparent       translucent cube surfaces (turns on --smooth)
+  --no-forces         do not draw force arrows
+  -h, --help          show this help
+  -V, --version       show the version
+
+Every option is also a control in the window.
 
 Keyboard: ← → previous/next · space play/pause · Home/End first/last · q/Esc quit
 
 Exit codes: 0 ok · 1 could not open the window · 2 wrong usage ·
 3 read error · 4 invalid file · 5 unsupported format";
 
-/// Banner al ejecutar `mole` sin argumentos. En color solo si la salida es una terminal y no se
-/// definió `NO_COLOR`.
 pub fn banner() -> String {
     use std::io::IsTerminal;
     const LOGO: [&str; 4] = [
@@ -59,7 +67,7 @@ pub fn banner() -> String {
         "   Authors: {}\n",
         env!("CARGO_PKG_AUTHORS").replace(':', ", ")
     );
-    out += "   Formats: XYZ (incl. ORCA *_trj.xyz), Gaussian 16 and ORCA 6.1 outputs\n\n";
+    out += "   Formats: XYZ (incl. ORCA *_trj.xyz), Gaussian 16 and ORCA 6.1 outputs, cube\n\n";
     out += &format!(
         "   {}  mole <file>...          open the viewer\n",
         paint("1", "Usage:")
@@ -77,21 +85,36 @@ pub fn exit_code(kind: ErrorKind) -> ExitCode {
     })
 }
 
-/// Opciones de la ventana que no son archivos.
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Options {
-    /// `--smooth`: dibujo suavizado con XRender.
     pub smooth: bool,
+    pub light: bool,
+    pub absolute: bool,
+    pub fix_orientation: bool,
+    pub no_mm: bool,
+    pub transparent: bool,
+    pub no_forces: bool,
+    pub frame: Option<usize>,
+    pub tol: Option<f64>,
+    pub iso: Option<f64>,
 }
 
-/// Punto de entrada común: interpreta los argumentos, carga los archivos y, si hay que abrir la
-/// ventana, llama a `open` con las estructuras, el título y las opciones.
+fn number(v: Option<std::ffi::OsString>) -> Option<f64> {
+    v?.to_str()?.parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+fn usage_error(msg: &str) -> ExitCode {
+    eprintln!("mole: {msg}\n\n{USAGE}");
+    ExitCode::from(2)
+}
+
 pub fn main(open: impl FnOnce(Loaded, &str, Options) -> Result<(), String>) -> ExitCode {
     let mut list = false;
     let mut options = Options::default();
     let mut files = Vec::new();
     let mut only_files = false;
-    for arg in std::env::args_os().skip(1) {
+    let mut args = std::env::args_os().skip(1);
+    while let Some(arg) = args.next() {
         match arg.to_str() {
             _ if only_files => files.push(PathBuf::from(arg)),
             Some("--") => only_files = true,
@@ -105,10 +128,27 @@ pub fn main(open: impl FnOnce(Loaded, &str, Options) -> Result<(), String>) -> E
             }
             Some("--list") => list = true,
             Some("--smooth") => options.smooth = true,
-            Some(s) if s.starts_with('-') => {
-                eprintln!("mole: unknown option '{s}'\n\n{USAGE}");
-                return ExitCode::from(2);
+            Some("--light") => options.light = true,
+            Some("--absolute") => options.absolute = true,
+            Some("--fix-orientation") => options.fix_orientation = true,
+            Some("--no-mm") => options.no_mm = true,
+            Some("--transparent") => options.transparent = true,
+            Some("--no-forces") => options.no_forces = true,
+            Some("--frame") => {
+                match number(args.next()).filter(|n| *n >= 1.0 && n.fract() == 0.0) {
+                    Some(n) => options.frame = Some(n as usize),
+                    None => return usage_error("--frame needs a structure number (1, 2, ...)"),
+                }
             }
+            Some("--tol") => match number(args.next()).filter(|t| (0.8..=1.6).contains(t)) {
+                Some(t) => options.tol = Some(t),
+                None => return usage_error("--tol needs a number from 0.80 to 1.60"),
+            },
+            Some("--iso") => match number(args.next()).filter(|v| *v > 0.0) {
+                Some(v) => options.iso = Some(v),
+                None => return usage_error("--iso needs a positive number"),
+            },
+            Some(s) if s.starts_with('-') => return usage_error(&format!("unknown option '{s}'")),
             _ => files.push(PathBuf::from(arg)),
         }
     }

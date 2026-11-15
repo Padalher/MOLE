@@ -1,12 +1,6 @@
-//! Salidas de Gaussian (`.out`/`.log`): geometría final y última energía SCF.
-//!
-//! Probado con Gaussian 16 Rev. B.01 (salidas de GLOMOS). Otras versiones no se declaran soportadas.
-
 use crate::{Atom, EnergySource, Error, ErrorKind, Structure};
 use std::path::Path;
 
-/// Tabla de coordenadas que sigue a `Standard orientation:` o `Input orientation:`:
-/// 4 líneas de cabecera y filas `centro Z tipo x y z` (o `centro Z x y z`) hasta una línea de guiones.
 fn parse_orientation(
     lines: &[&str],
     start: usize,
@@ -35,7 +29,6 @@ fn parse_orientation(
         }
         match u8::try_from(z) {
             Ok(z @ 1..=118) => atoms.push(Atom { z, pos }),
-            // Átomos fantasma (Bq, Z = 0) o ficticios (X, Z = -1): no se dibujan, pero se avisa.
             _ => warnings.push(format!(
                 "{}:{lineno}: center with Z = {z} skipped (ghost or dummy atom)",
                 path.display()
@@ -49,8 +42,6 @@ fn parse_orientation(
     ))
 }
 
-/// Lee la última geometría (`Standard orientation`, o `Input orientation` si no hay otra) y la
-/// última energía `SCF Done`. Devuelve también avisos (sin energía, terminación anormal…).
 pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error> {
     let lines: Vec<&str> = text.lines().collect();
     if !lines
@@ -74,7 +65,6 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
         } else if line.contains("Input orientation:") {
             last_inp = Some(i);
         } else if line.contains("SCF Done:") {
-            // " SCF Done:  E(RPBE1PBE) =  -5131.15495934     A.U. after   19 cycles"
             energy = line
                 .split_once('=')
                 .and_then(|(_, rest)| rest.split_whitespace().next())
@@ -126,6 +116,8 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
         label,
         path: path.to_path_buf(),
         line: start + 1,
+        columns: Vec::new(),
+        grid: None,
     };
     Ok((structure, warnings))
 }
@@ -134,7 +126,6 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
 mod tests {
     use super::*;
 
-    /// Extracto sintético con el formato de Gaussian 16 (dos geometrías, dos energías).
     const SAMPLE: &str = " Entering Gaussian System, Link 0=g16
  Gaussian 16:  EM64L-G16RevB.01 20-Dec-2017
                          Standard orientation:
@@ -190,28 +181,23 @@ mod tests {
 
     #[test]
     fn incomplete_or_foreign_outputs() {
-        // Sin «Normal termination» ni energía: se carga con avisos.
         let cut = SAMPLE.split(" SCF Done").next().unwrap();
         let (s, w) = p(cut).unwrap();
         assert_eq!(s.energy, None);
         assert!(w.iter().any(|w| w.contains("no 'SCF Done'")));
         assert!(w.iter().any(|w| w.contains("did not terminate normally")));
-        // Tabla truncada.
         let trunc: String = SAMPLE.lines().take(9).collect::<Vec<_>>().join("\n");
         assert!(p(&trunc).unwrap_err().msg.contains("unterminated"));
-        // Sin geometría.
         assert!(
             p(" Entering Gaussian System\n")
                 .unwrap_err()
                 .msg
                 .contains("geometry")
         );
-        // Otro programa.
         assert_eq!(
             p("* O   R   C   A *\n").unwrap_err().kind,
             ErrorKind::Unsupported
         );
-        // Fila corrupta.
         let bad = SAMPLE.replace("0.760000   -0.500000", "0.76abc   -0.500000");
         assert!(
             p(&bad).is_ok(),
