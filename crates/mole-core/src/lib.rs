@@ -78,8 +78,13 @@ impl Structure {
 
 pub const DEFAULT_BOND_TOLERANCE: f64 = 1.25;
 
+pub const MAX_BONDED_ATOMS: usize = 10_000;
+
 pub fn bonds(atoms: &[Atom], tolerance: f64, metal_metal: bool) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
+    if atoms.len() > MAX_BONDED_ATOMS {
+        return out;
+    }
     for (i, a) in atoms.iter().enumerate() {
         for (j, b) in atoms.iter().enumerate().skip(i + 1) {
             if !metal_metal && elements::is_metal(a.z) && elements::is_metal(b.z) {
@@ -146,12 +151,14 @@ pub fn read_file(path: &Path) -> Result<String, Error> {
         line: None,
         msg,
     };
-    let len = std::fs::metadata(path)
-        .map_err(|e| io(e.to_string()))?
-        .len();
-    if len > MAX_FILE_BYTES {
+    let meta = std::fs::metadata(path).map_err(|e| io(e.to_string()))?;
+    if !meta.is_file() {
+        return Err(io("not a regular file".into()));
+    }
+    if meta.len() > MAX_FILE_BYTES {
         return Err(io(format!(
-            "file too large ({len} bytes; maximum {MAX_FILE_BYTES})"
+            "file too large ({} bytes; maximum {MAX_FILE_BYTES})",
+            meta.len()
         )));
     }
     let bytes = std::fs::read(path).map_err(|e| io(e.to_string()))?;
@@ -247,22 +254,28 @@ fn fill_energies_from_outputs(
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| is_output_ext(p))
         .collect();
+    let mut read: Vec<Option<(Option<f64>, Option<EnergySource>)>> = vec![None; outputs.len()];
     for f in frames.iter_mut().filter(|f| !f.label.is_empty()) {
         let suffix = format!("_{}", f.label);
-        let Some(out_path) = outputs.iter().find(|p| {
+        let Some(k) = outputs.iter().position(|p| {
             p.file_stem()
                 .and_then(|s| s.to_str())
                 .is_some_and(|s| s == f.label || s.ends_with(&suffix))
         }) else {
             continue;
         };
-        match read_file(out_path).and_then(|t| parse_output(&t, out_path)) {
-            Ok((s, _)) if s.energy.is_some() => {
-                f.energy = s.energy;
-                f.energy_source = s.energy_source;
+        let (energy, source) = *read[k].get_or_insert_with(|| {
+            match read_file(&outputs[k]).and_then(|t| parse_output(&t, &outputs[k])) {
+                Ok((s, _)) => (s.energy, s.energy_source),
+                Err(e) => {
+                    warnings.push(format!("could not read the associated energy: {e}"));
+                    (None, None)
+                }
             }
-            Ok(_) => {}
-            Err(e) => warnings.push(format!("could not read the associated energy: {e}")),
+        });
+        if energy.is_some() {
+            f.energy = energy;
+            f.energy_source = source;
         }
     }
 }
@@ -298,6 +311,20 @@ fn mutations(base: &str, n: usize, mut f: impl FnMut(&str)) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn huge_structures_have_no_bonds() {
+        let atoms: Vec<Atom> = (0..=MAX_BONDED_ATOMS).map(|k| atom(6, k as f64)).collect();
+        assert!(bonds(&atoms, 1.25, true).is_empty());
+        assert_eq!(bonds(&atoms[..3], 1.25, true), vec![(0, 1), (1, 2)]);
+    }
+
+    #[test]
+    fn only_regular_files_are_read() {
+        let e = read_file(&std::env::temp_dir()).unwrap_err();
+        assert_eq!(e.kind, ErrorKind::Io);
+        assert!(e.msg.contains("not a regular file"), "{}", e.msg);
+    }
 
     fn atom(z: u8, x: f64) -> Atom {
         Atom {

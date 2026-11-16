@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A lightweight molecular viewer for XYZ, Gaussian, ORCA and cube files, with an E vs n energy plot.</b><br>
-  Fluid over <code>ssh -Y</code> from an HPC cluster · a single executable · reads XYZ, Gaussian, ORCA and cube files
+  Runs where your results are and is viewed over <code>ssh -Y</code> · a single executable under 1 MB · no dependencies
 </p>
 
 <p align="center">
@@ -26,15 +26,16 @@ MOLE opens XYZ files with one or more structures, Gaussian and ORCA output files
 
 - **the 3D structure**: ball and stick; rotate, move and zoom with the mouse;
 - **the energy plot E vs n**: relative energies (E − Emin) by default; hover a point to see n, E and the label; click or drag to browse the structures;
-- **a column of controls next to the structure**, grouped by what they do (playback, bonds, surface, forces, view, plot): first, last, play/pause, previous, next, speed, loop, bond tolerance, metal–metal bonds, a fixed orientation for all the structures and a white theme; every control is also a command-line option (`mole --help`);
-- **orbitals and densities from cube files**: isosurfaces with the positive lobe in red and the negative one in blue, an adjustable isovalue and optional transparency.
+- **a column of controls next to the structure**, grouped by what they do (playback, bonds, surface, forces, view, plot): first, last, play/pause, previous, next, speed, loop, bond tolerance, metal–metal bonds, a fixed orientation for all the structures and a white theme; the display options are also command-line options (`mole --help`);
+- **orbitals and densities from cube files**: isosurfaces with the positive lobe in red and the negative one in blue, an adjustable isovalue and optional transparency;
+- **values per atom and force arrows** from extended XYZ files (see *Formats and energies*).
 
-MOLE is designed to run **on a remote machine (an HPC cluster or a workstation) and be viewed over `ssh -Y`**. It draws with the core X11 protocol, so only drawing commands travel over the network (a few KB per frame), and the window stays fluid even on a home connection. It only reads results; it never runs calculations.
+MOLE is designed to run **on a remote machine (an HPC cluster or a workstation) and be viewed over `ssh -Y`**. It draws with the core X11 protocol, so only drawing requests travel over the network, never images. Measured traffic per frame: about 5 KB for a water molecule, 10 KB for a water hexamer and 74 KB for 100 atoms (25 KB with `--smooth`); the cube surfaces we tested added 28–120 KB. (MOLE 0.3.1, Linux with Xwayland, 1200 × 820 window; bytes sent to the X server counted with `strace` during `MOLE_BENCH=300 mole file`.) It only reads results; it never runs calculations.
 
 ## Installation
 MOLE is a single executable with no runtime dependencies. No administrator rights are needed.
 
-**With pip** (Linux x86_64/aarch64, macOS, Windows):
+**With pip** (Linux x86_64/aarch64, macOS; on Windows, use WSL as described below):
 ```bash
 pip install mole-viewer        # or: pip install --user mole-viewer · pipx install mole-viewer · uv tool install mole-viewer
 mole                           # the package is called mole-viewer; the command is mole
@@ -99,8 +100,11 @@ mole --help
 - **Keyboard:** ← → previous/next · space play/pause · Home/End first/last · q or Esc quit.
 - **Mouse (3D view):** drag to rotate · right button to move · wheel to zoom · double click to reset.
 - **Mouse (plot):** hover a point to see n, E and the label · click or drag to browse the structures · drag its top edge to make it taller or shorter. Drag the left edge of the controls column to widen it.
+- **Large structures:** bonds are drawn up to 10 000 atoms; larger structures show only the atoms.
 - **Energy axis:** relative (E − Emin) by default; the *E - Emin* checkbox switches to absolute energies.
 - **Fix orientation:** turns every structure to the orientation of the one on screen (atom by atom for trajectories and conformers, by principal axes for isomers), so an ensemble can be browsed without the view jumping.
+
+The window's interface is in English.
 
 **Try it** with the example included in this repository: the geometry optimization of a distorted water molecule (ORCA 6.1.1, B3LYP-D3BJ/def2-SVP, input in [`examples/water_opt.inp`](https://github.com/Padalher/MOLE/blob/main/examples/water_opt.inp)):
 ```bash
@@ -121,7 +125,7 @@ Tested with XYZ files, Gaussian 16 Rev. B.01 and ORCA 6.1 outputs.
 
 Extended XYZ files (`Properties=species:S:1:pos:R:3:…` in the comment line) keep their extra numeric columns per atom: hovering over an atom shows its values (charges, Fukui functions, …), and a `forces:R:3` column is drawn as one arrow per atom, scaled so that the largest force of each structure has the same length; the *Arrows* checkbox hides them. The `|F|` shown when hovering gives the actual magnitude.
 
-Cube files were tested with orbitals, Fukui functions and densities from Multiwfn and ORCA. To stay fluid over the network, a surface is drawn with at most 6000 faces (a coarser grid is used above that); transparency needs XRender, so it turns on smooth drawing.
+Cube files were tested with orbitals, Fukui functions and densities from Multiwfn and ORCA. To keep the traffic low, a coarser grid is used when a surface would have more than 6000 faces, which keeps it near that number; transparency needs XRender, so it turns on smooth drawing.
 
 ## Citation
 If you use MOLE in published work, please cite it with its DOI, [10.5281/zenodo.23963301](https://doi.org/10.5281/zenodo.23963301) (Zenodo; it always points to the latest version, and each version also has its own DOI there). The metadata are in [`CITATION.cff`](https://github.com/Padalher/MOLE/blob/main/CITATION.cff), and GitHub's *Cite this repository* button turns them into APA or BibTeX.
@@ -135,7 +139,7 @@ Questions about the software: <contact@padalher.com>. Academic contact: the auth
 MOLE was designed, directed and validated by Pablo D. Alvarez-Hernandez. AI-based coding assistants were used to write and refactor parts of the code, the automated tests and the documentation; every change was reviewed and validated by the author. The energies and geometries that MOLE shows are always read from the quantum-chemistry output files, never generated by a language model.
 
 ## License
-[MIT](https://github.com/Padalher/MOLE/blob/main/LICENSE).
+[MIT](https://github.com/Padalher/MOLE/blob/main/LICENSE). Element colors that MOLE does not set itself come from the [Blue Obelisk Data Repository](https://github.com/BlueObelisk/bodr) (MIT license).
 
 ## Development
 ```bash

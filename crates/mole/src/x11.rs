@@ -35,6 +35,8 @@ struct Theme {
     face_hover: Rgb,
     border: Rgb,
     tooltip: Rgb,
+    warn: Rgb,
+    force: Rgb,
 }
 
 const DARK: Theme = Theme {
@@ -49,6 +51,8 @@ const DARK: Theme = Theme {
     face_hover: [0.26, 0.26, 0.3],
     border: [0.32, 0.32, 0.36],
     tooltip: [0.16, 0.16, 0.18],
+    warn: [1.0, 0.65, 0.2],
+    force: [0.95, 0.65, 0.05],
 };
 
 const LIGHT: Theme = Theme {
@@ -63,6 +67,8 @@ const LIGHT: Theme = Theme {
     face_hover: [0.86, 0.89, 0.95],
     border: [0.7, 0.7, 0.75],
     tooltip: [1.0, 1.0, 0.92],
+    warn: [0.75, 0.42, 0.0],
+    force: [0.8, 0.45, 0.0],
 };
 
 fn theme(app: &App) -> &'static Theme {
@@ -72,10 +78,8 @@ fn theme(app: &App) -> &'static Theme {
 const SEE_THROUGH: f64 = 0.45;
 
 const ACCENT: Rgb = [0.2, 0.6, 0.95];
-const WARN: Rgb = [1.0, 0.65, 0.2];
 const LINE: Rgb = [0.85, 0.35, 0.3];
 const POINT: Rgb = [0.45, 0.6, 0.95];
-const FORCE: Rgb = [0.95, 0.65, 0.05];
 
 fn latin1(s: &str) -> Vec<u8> {
     s.chars()
@@ -191,6 +195,9 @@ impl Canvas<'_> {
     }
 
     fn line(&self, d: Drawable, a: (f64, f64), b: (f64, f64), width: u32, rgb: Rgb) -> Res<()> {
+        let Some((a, b)) = clip(a, b) else {
+            return Ok(());
+        };
         let s = Segment {
             x1: a.0.round() as i16,
             y1: a.1.round() as i16,
@@ -253,7 +260,7 @@ fn open_font(conn: &RustConnection, names: &[&str]) -> Res<FontInfo> {
             line_h: i32::from(q.font_ascent) + i32::from(q.font_descent),
         });
     }
-    Err(format!("ninguna fuente disponible en el servidor X: {names:?}").into())
+    Err(format!("no font available on the X server: {names:?}").into())
 }
 
 struct Render {
@@ -271,8 +278,10 @@ struct Render {
 type SpriteCache = HashMap<(u32, u16, u8), (Pixmap, Picture, u16)>;
 
 const STICK_LEN: u16 = 16;
+const SPRITE_MAX: u16 = 256;
+const STICK_MAX: u16 = 64;
 
-const MAX_SPRITES: usize = 512;
+const MAX_SPRITES: usize = 256;
 
 fn init_render(conn: &RustConnection, screen_num: usize, visual: Visualid) -> Res<Option<Render>> {
     if conn
@@ -390,12 +399,13 @@ impl Window<'_> {
         if rad < 0.5 {
             return Ok(());
         }
-        let diameter = (2.0 * rad).round() as u16 + 2;
+        let diameter = (2.0 * rad).round().min(8192.0) as u16 + 2;
+        let size = diameter.min(SPRITE_MAX);
         let level = (fade * 16.0).round() as u8;
         let color = rgb
             .iter()
             .fold(0u32, |acc, v| acc << 8 | (v * 255.0).round() as u32);
-        let key = (color, diameter, level);
+        let key = (color, size, level);
         let cached = r.sprites.borrow().get(&key).copied();
         let (_, pic, d) = match cached {
             Some(s) => s,
@@ -407,11 +417,27 @@ impl Window<'_> {
                         self.conn.free_pixmap(pm)?;
                     }
                 }
-                let s = self.make_sprite(r, diameter, rgb, f64::from(level) / 16.0)?;
+                let s = self.make_sprite(r, size, rgb, f64::from(level) / 16.0)?;
                 sprites.insert(key, s);
                 s
             }
         };
+        if d == SPRITE_MAX {
+            let s = fx(f64::from(d) / f64::from(diameter));
+            let t = render::Transform {
+                matrix11: s,
+                matrix12: 0,
+                matrix13: 0,
+                matrix21: 0,
+                matrix22: s,
+                matrix23: 0,
+                matrix31: 0,
+                matrix32: 0,
+                matrix33: fx(1.0),
+            };
+            self.conn.render_set_picture_transform(pic, t)?;
+        }
+        let d = diameter;
         let half = f64::from(d) / 2.0;
         self.conn.render_composite(
             PictOp::OVER,
@@ -477,6 +503,7 @@ impl Window<'_> {
         self.conn
             .render_tri_fan(PictOp::OVER, g, pic, r.a8, sx, sy, &pts)?;
         self.conn.render_free_picture(g)?;
+        self.conn.render_set_picture_filter(pic, b"bilinear", &[])?;
         Ok((pm, pic, d))
     }
 
@@ -497,12 +524,12 @@ impl Window<'_> {
         }
         let (ux, uy) = (dx / len, dy / len);
         let len = len + 0.75;
-        let thick = w.round().max(1.0) as u16;
+        let thick = w.round().clamp(1.0, 8192.0) as u16;
         let level = (fade * 16.0).round() as u8;
         let color = rgb
             .iter()
             .fold(0u32, |acc, v| acc << 8 | (v * 255.0).round() as u32);
-        let key = (color, thick, level);
+        let key = (color, thick.min(STICK_MAX), level);
         let cached = r.sticks.borrow().get(&key).copied();
         let (_, pic, h) = match cached {
             Some(t) => t,
@@ -514,7 +541,7 @@ impl Window<'_> {
                         self.conn.free_pixmap(pm)?;
                     }
                 }
-                let t = self.make_stick(r, thick, rgb, f64::from(level) / 16.0)?;
+                let t = self.make_stick(r, thick.min(STICK_MAX), rgb, f64::from(level) / 16.0)?;
                 sticks.insert(key, t);
                 t
             }
@@ -523,7 +550,8 @@ impl Window<'_> {
         if nx + ny < 0.0 {
             (nx, ny) = (-nx, -ny);
         }
-        let half = f64::from(h) / 2.0;
+        let half = (f64::from(thick) + 2.0) / 2.0;
+        let k = f64::from(h) / (2.0 * half);
         let corners = [
             (a.0 + nx * half, a.1 + ny * half),
             (a.0 - nx * half, a.1 - ny * half),
@@ -540,9 +568,9 @@ impl Window<'_> {
             matrix11: fx(s * ux),
             matrix12: fx(s * uy),
             matrix13: fx(-s * (ux * ax + uy * ay)),
-            matrix21: fx(nx),
-            matrix22: fx(ny),
-            matrix23: fx(-(nx * ax + ny * ay) + half),
+            matrix21: fx(k * nx),
+            matrix22: fx(k * ny),
+            matrix23: fx(-k * (nx * ax + ny * ay) + f64::from(h) / 2.0),
             matrix31: 0,
             matrix32: 0,
             matrix33: fx(1.0),
@@ -715,6 +743,7 @@ impl Window<'_> {
         &self,
         shapes: impl Iterator<Item = &'s Shape3d>,
         smooth: Option<&Render>,
+        force: Rgb,
     ) -> Res<()> {
         let (c, d) = (&self.canvas, self.back);
         for &shape in shapes {
@@ -749,11 +778,11 @@ impl Window<'_> {
                     rgb,
                 )?,
                 (Shape3d::Arrow { from, to, head }, _) => {
-                    c.line(d, from, to, 2, FORCE)?;
+                    c.line(d, from, to, 2, force)?;
                     c.polygon(
                         d,
                         &head.map(|(x, y)| (x.round() as i32, y.round() as i32)),
-                        FORCE,
+                        force,
                     )?
                 }
             }
@@ -774,14 +803,14 @@ impl Window<'_> {
         let is_face = |s: &Shape3d| matches!(s, Shape3d::Quad { .. });
         let layer = smooth.filter(|_| app.transparent && scene.iter().any(is_face));
         if let Some(r) = layer {
-            self.draw_shapes(scene.iter().filter(|s| !is_face(s)), smooth)?;
+            self.draw_shapes(scene.iter().filter(|s| !is_face(s)), smooth, th.force)?;
             let v = l.view;
             let (x, y) = (v.x as i16, v.y as i16);
             let (w, h) = (v.w as u16, v.h as u16);
             self.conn.copy_area(d, r.layer, c.gc, x, y, x, y, w, h)?;
             c.rect(d, v, th.view)?;
         }
-        self.draw_shapes(scene.iter(), smooth)?;
+        self.draw_shapes(scene.iter(), smooth, th.force)?;
         if let Some(r) = layer {
             let v = l.view;
             let (x, y) = (v.x as i16, v.y as i16);
@@ -898,7 +927,7 @@ impl Window<'_> {
         match s.energy {
             Some(e) => put(c, &self.bold, &format!("E = {e}"), th.text)?,
             None if s.grid.is_some() => {}
-            None => put(c, &self.font, "no energy", WARN)?,
+            None => put(c, &self.font, "no energy", th.warn)?,
         }
         if !s.label.is_empty() {
             put(c, &self.font, &s.label, th.text)?;
@@ -912,12 +941,13 @@ impl Window<'_> {
                 c,
                 &self.font,
                 &format!("! {n} warning{plural} (see terminal)"),
-                WARN,
+                th.warn,
             )?;
         }
 
-        if let Hover::Atom(i) = app.hover {
-            let a = &app.structure().atoms[i];
+        if let Hover::Atom(i) = app.hover
+            && let Some(a) = app.structure().atoms.get(i)
+        {
             let text = format!(
                 "{} {}   ({:.4}, {:.4}, {:.4}) Å",
                 elements::symbol(a.z),
@@ -1099,12 +1129,42 @@ impl Window<'_> {
 }
 
 fn seg(x1: i32, y1: i32, x2: i32, y2: i32) -> Segment {
+    let c = |v: i32| v.clamp(-32000, 32000) as i16;
     Segment {
-        x1: x1 as i16,
-        y1: y1 as i16,
-        x2: x2 as i16,
-        y2: y2 as i16,
+        x1: c(x1),
+        y1: c(y1),
+        x2: c(x2),
+        y2: c(y2),
     }
+}
+
+fn clip(a: (f64, f64), b: (f64, f64)) -> Option<((f64, f64), (f64, f64))> {
+    const L: f64 = 30000.0;
+    if ![a.0, a.1, b.0, b.1].iter().all(|v| v.is_finite()) {
+        return None;
+    }
+    let d = (b.0 - a.0, b.1 - a.1);
+    let (mut t0, mut t1) = (0.0f64, 1.0f64);
+    for (p, q) in [
+        (-d.0, a.0 + L),
+        (d.0, L - a.0),
+        (-d.1, a.1 + L),
+        (d.1, L - a.1),
+    ] {
+        if p == 0.0 {
+            if q < 0.0 {
+                return None;
+            }
+        } else if p < 0.0 {
+            t0 = t0.max(q / p);
+        } else {
+            t1 = t1.min(q / p);
+        }
+    }
+    (t0 <= t1).then_some((
+        (a.0 + t0 * d.0, a.1 + t0 * d.1),
+        (a.0 + t1 * d.0, a.1 + t1 * d.1),
+    ))
 }
 
 fn seg_f(a: (f64, f64), b: (f64, f64)) -> Segment {
@@ -1294,6 +1354,18 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
         AtomEnum::ATOM,
         &[wm_delete],
     )?;
+    let (min_w, min_h) = Layout::min_size(font.char_w, font.line_h, app.layout.panes);
+    let mut hints = [0u32; 18];
+    hints[0] = 16;
+    hints[5] = min_w as u32;
+    hints[6] = min_h as u32;
+    conn.change_property32(
+        PropMode::REPLACE,
+        win,
+        AtomEnum::WM_NORMAL_HINTS,
+        AtomEnum::WM_SIZE_HINTS,
+        &hints,
+    )?;
     conn.map_window(win)?;
 
     let gc = conn.generate_id()?;
@@ -1362,6 +1434,7 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
         app.handle(Input::Release { button: 1 }, 0.0);
     }
 
+    let mut x_errors = 0u32;
     let t0 = Instant::now();
     let now = || t0.elapsed().as_secs_f64();
     let cursor_font = conn.generate_id()?;
@@ -1396,7 +1469,10 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
     loop {
         let before = app.player.current;
         let wait = app.player.tick(now());
-        dirty |= app.player.current != before;
+        if app.player.current != before {
+            app.refresh_hover();
+            dirty = true;
+        }
         let mut event = if dirty || bench.is_some() {
             conn.poll_for_event()?
         } else if let Some(wait) = wait {
@@ -1442,6 +1518,16 @@ fn run_inner(loaded: Loaded, title: &str, options: Options) -> Res<()> {
                 },
                 Event::ClientMessage(m) if m.data.as_data32()[0] == wm_delete => {
                     Some(Input::Key(Key::Quit))
+                }
+                Event::Error(e) => {
+                    x_errors += 1;
+                    if x_errors <= 3 {
+                        eprintln!(
+                            "mole: X error {} (request {})",
+                            e.error_code, e.major_opcode
+                        );
+                    }
+                    None
                 }
                 _ => None,
             };
@@ -1549,7 +1635,20 @@ fn save_capture(
 
 #[cfg(test)]
 mod tests {
-    use super::latin1;
+    use super::{clip, latin1};
+
+    #[test]
+    fn far_lines_keep_their_slope() {
+        assert_eq!(
+            clip((0.0, 0.0), (10.0, 5.0)),
+            Some(((0.0, 0.0), (10.0, 5.0)))
+        );
+        let ((x0, y0), (x1, y1)) = clip((-90000.0, -45000.0), (90000.0, 45000.0)).unwrap();
+        assert!((y0 / x0 - 0.5).abs() < 1e-12 && (y1 / x1 - 0.5).abs() < 1e-12);
+        assert!(x0 >= -30000.0 && x1 <= 30000.0);
+        assert_eq!(clip((40000.0, 0.0), (50000.0, 10.0)), None);
+        assert_eq!(clip((f64::NAN, 0.0), (1.0, 1.0)), None);
+    }
 
     #[test]
     fn latin1_replaces_what_server_fonts_cannot_show() {

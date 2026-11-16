@@ -104,7 +104,7 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
         }
     }
     if sets == 0 {
-        return Err(err(data, "invalid number of data sets".into()));
+        return Err(err(7 + atom_lines, "invalid number of data sets".into()));
     }
     let points = n[0].checked_mul(n[1]).and_then(|v| v.checked_mul(n[2]));
     let total = points.and_then(|p| p.checked_mul(sets));
@@ -210,20 +210,16 @@ impl Grid {
             cells[cell_index(p)] = vertices.len() as u32;
             let local = [0, 1, 2].map(|a| (p[a] as f64 + sum[a] / crossings) * step as f64);
             let mut normal = [0.0; 3];
-            for a in 0..3 {
-                let slope: f32 = (0..8)
+            for (a, &axis) in self.axes.iter().enumerate() {
+                let slope: f64 = (0..8)
                     .map(|c| {
-                        if c >> a & 1 == 1 {
-                            -values[c]
-                        } else {
-                            values[c]
-                        }
+                        let v = f64::from(values[c]);
+                        if c >> a & 1 == 1 { -v } else { v }
                     })
                     .sum();
-                let axis = self.axes[a];
                 let len2 = axis.iter().map(|v| v * v).sum::<f64>().max(1e-300);
                 for (n, v) in normal.iter_mut().zip(axis) {
-                    *n += f64::from(slope) * v / len2;
+                    *n += slope * v / len2;
                 }
             }
             vertices.push((self.position(local), normal));

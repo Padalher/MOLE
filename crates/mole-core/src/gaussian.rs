@@ -29,6 +29,7 @@ fn parse_orientation(
         }
         match u8::try_from(z) {
             Ok(z @ 1..=118) => atoms.push(Atom { z, pos }),
+            _ if warnings.len() >= 20 => {}
             _ => warnings.push(format!(
                 "{}:{lineno}: center with Z = {z} skipped (ghost or dummy atom)",
                 path.display()

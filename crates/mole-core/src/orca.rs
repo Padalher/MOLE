@@ -35,6 +35,7 @@ fn parse_geometry(
         }
         match elements::parse_element(toks[0]) {
             Some(z) => atoms.push(Atom { z, pos }),
+            None if warnings.len() >= 20 => {}
             None => warnings.push(format!(
                 "{}:{lineno}: center '{}' skipped (not an element)",
                 path.display(),

@@ -16,6 +16,19 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - README, `CITATION.cff` and package description: MOLE is described by the files it opens (XYZ, Gaussian and ORCA outputs, cube files).
 - README: tested on Linux, macOS (XQuartz) and Windows through WSL, locally and over ssh.
 
+### Fixed
+- A crash when the pointer rested on an atom while the structure on screen changed (playback, a button or a window resize) and the new structure had fewer atoms.
+- *Previous* no longer jumps from the first structure to the last when *Loop* is off.
+- `mole --list file | head` no longer ends with an error when the pipe closes; labels and warnings printed in the terminal have their control characters replaced.
+- Only regular files are read: a named pipe or a device given as a file is reported instead of blocking.
+- The window has a minimum size, and the buttons of the controls column become shorter when the window is low, so every control stays visible (also with cube files and forces).
+- Light theme: warnings and force arrows have enough contrast on white.
+- Errors returned by the X server are printed in the terminal instead of being ignored.
+- *Smooth*: zooming in no longer slows the window down until it freezes. Spheres and bonds are drawn from small cached images that the X server scales, instead of new images as large as the zoom.
+- Lines far outside the window keep their direction, and moving the view is limited to the window size.
+- Structures with more than 10 000 atoms are drawn without bonds, so they no longer freeze the window (with 20 000 atoms, finding the bonds took about 1 s per structure); the energy from an associated `.out` file is read once per file.
+- The error line given for a cube file with an invalid number of data sets.
+
 ## [0.3.0] — 2026-11-04
 ### Changed
 - The controls are in a single column at the top right, next to the 3D view, one per row: the playback buttons are larger and labeled (First, Last, Play/Pause, Previous, Next), so the mouse travels less between the structure and the buttons. The 3D view and the E vs n plot share the rest of the window.

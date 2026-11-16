@@ -231,7 +231,8 @@ impl Player {
 
     pub fn prev(&mut self) {
         self.current = match self.current {
-            0 => self.len - 1,
+            0 if self.looping => self.len - 1,
+            0 => 0,
             c => c - 1,
         };
     }
@@ -393,6 +394,17 @@ impl Layout {
         Self::with_panes(w, h, char_w, line_h, Panes::default())
     }
 
+    pub fn min_size(char_w: i32, line_h: i32, panes: Panes) -> (i32, i32) {
+        let free = Panes {
+            plot_h: None,
+            panel_w: None,
+            ..panes
+        };
+        let l = Self::with_panes(4000, 0, char_w, line_h, free);
+        let bottom = l.items.iter().map(|i| i.1.y + i.1.h).max().unwrap_or(0);
+        (l.panel.w + 40 * char_w, bottom + 6)
+    }
+
     pub fn with_panes(w: i32, h: i32, char_w: i32, line_h: i32, panes: Panes) -> Self {
         let header = Rect {
             x: 0,
@@ -427,7 +439,6 @@ impl Layout {
             h: (plot.y - header.h).max(0),
         };
         let (x0, x1) = (panel.x + pad, panel.x + panel_w - pad);
-        let value_w = x1 - x0 - 2 * (bh + gap);
         enum Row {
             Full(Button),
             Step(Button, BarItem, Button),
@@ -479,6 +490,10 @@ impl Layout {
             ],
         ));
         groups.push(("PLOT", vec![Full(Button::RelativeEnergy)]));
+        let rows: i32 = groups.iter().map(|g| g.1.len() as i32).sum();
+        let titles = groups.len() as i32 * (line_h + 10) - 8;
+        let bh = ((panel.h - 2 * pad - titles) / rows - gap).clamp(line_h + 8, bh);
+        let value_w = x1 - x0 - 2 * (bh + gap);
         let mut items = Vec::new();
         let mut put =
             |item, x: i32, w: i32, y: i32, h: i32| items.push((item, Rect { x, y, w, h }));
@@ -1103,7 +1118,7 @@ impl App {
                 let k = FORCE_LEN * scale / max;
                 let (dx, dy) = (r[0] * k, -r[1] * k);
                 let len = dx.hypot(dy);
-                if len.is_nan() || len < 4.0 {
+                if !len.is_finite() || len < 4.0 {
                     continue;
                 }
                 let (ux, uy) = (dx / len, dy / len);
@@ -1170,6 +1185,12 @@ impl App {
         }
         if o.fix_orientation {
             self.press(Button::FixOrientation, 0.0);
+        }
+    }
+
+    pub fn refresh_hover(&mut self) {
+        if self.drag.is_none() {
+            self.hover = self.hover_at(self.pointer.0, self.pointer.1);
         }
     }
 
@@ -1254,6 +1275,7 @@ impl App {
             Input::Resize { w, h } => {
                 let (cw, lh) = (self.layout.char_w, self.layout.line_h);
                 self.layout = Layout::with_panes(w, h, cw, lh, self.layout.panes);
+                self.refresh_hover();
                 return true;
             }
             Input::Key(k) => match k {
@@ -1271,6 +1293,7 @@ impl App {
                     && let Some(b) = l.button_at(x, y)
                 {
                     self.press(b, now);
+                    self.refresh_hover();
                     return true;
                 }
                 if button == 1
@@ -1337,7 +1360,11 @@ impl App {
                     if b == 1 {
                         self.rotation = mul(&rotation(dy * 0.01, dx * 0.01), &self.rotation);
                     } else {
-                        self.pan = (self.pan.0 + dx, self.pan.1 + dy);
+                        let (w, h) = (f64::from(self.layout.view.w), f64::from(self.layout.view.h));
+                        self.pan = (
+                            (self.pan.0 + dx).clamp(-w, w),
+                            (self.pan.1 + dy).clamp(-h, h),
+                        );
                     }
                     self.drag = Some((b, x, y));
                     self.hover = Hover::None;
@@ -1352,9 +1379,7 @@ impl App {
                 return before.2 != Hover::None;
             }
         }
-        if self.drag.is_none() {
-            self.hover = self.hover_at(self.pointer.0, self.pointer.1);
-        }
+        self.refresh_hover();
         before != (self.player.current, self.player.playing, self.hover)
             || matches!(input, Input::Key(_) | Input::Press { .. })
     }
@@ -1426,6 +1451,9 @@ mod tests {
             (2, false),
             "sin repetición se detiene al final"
         );
+        p.go(0);
+        p.prev();
+        assert_eq!(p.current, 0, "sin repetición, anterior no da la vuelta");
         p.toggle(0.0);
         assert_eq!(
             (p.current, p.playing),
@@ -1751,6 +1779,49 @@ mod tests {
         let bottom = a.layout.items.iter().map(|i| i.1.y + i.1.h).max().unwrap();
         assert!(bottom < a.layout.h, "los controles caben: {bottom}");
         assert!(!app(2).layout.items.iter().any(|i| i.0 == BarItem::Iso));
+    }
+
+    #[test]
+    fn minimum_window_fits_every_control() {
+        for (cube, forces) in [(false, false), (true, false), (false, true), (true, true)] {
+            let panes = Panes {
+                cube,
+                forces,
+                ..Default::default()
+            };
+            let (w, h) = Layout::min_size(9, 15, panes);
+            let l = Layout::with_panes(w, h, 9, 15, panes);
+            let bottom = l.items.iter().map(|i| i.1.y + i.1.h).max().unwrap();
+            assert!(bottom <= h, "{cube} {forces}: {bottom} > {h}");
+            assert!(l.view.w >= 300 && l.view.h > 0, "{:?}", l.view);
+        }
+    }
+
+    #[test]
+    fn hover_follows_the_structure_on_screen() {
+        let mut big = s(Some(0.0));
+        big.atoms = (0..10)
+            .map(|i| Atom {
+                z: 6,
+                pos: [f64::from(i) * 1.5, 0.0, 0.0],
+            })
+            .collect();
+        let loaded = Loaded {
+            structures: vec![big, s(Some(1.0))],
+            ..Default::default()
+        };
+        let mut a = App::new(loaded, Layout::new(1200, 800, 9, 15));
+        let (p, _) = a.projection();
+        let (x, y) = (p[9][0] as i32, p[9][1] as i32);
+        a.handle(Input::Motion { x, y }, 0.0);
+        assert_eq!(a.hover, Hover::Atom(9));
+        a.player.next();
+        a.refresh_hover();
+        assert!(
+            !matches!(a.hover, Hover::Atom(i) if i >= a.structure().atoms.len()),
+            "{:?}",
+            a.hover
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>Visor molecular ligero para archivos XYZ, Gaussian, ORCA y cube, con gráfica de energía E vs n.</b><br>
-  Fluido por <code>ssh -Y</code> desde un clúster HPC · un único ejecutable · lee archivos XYZ, Gaussian, ORCA y cube
+  Corre donde están tus resultados y se ve por <code>ssh -Y</code> · un único ejecutable de menos de 1 MB · sin dependencias
 </p>
 
 <p align="center">
@@ -26,15 +26,16 @@ MOLE abre archivos XYZ con una o varias estructuras, salidas de Gaussian y de OR
 
 - **la estructura en 3D**: bolas y barras; se gira, se mueve y se hace zoom con el ratón;
 - **la gráfica de energía E vs n**: energías relativas (E − Emin) por defecto; al pasar el ratón sobre un punto se ven n, E y la etiqueta; clic o arrastrar recorre las estructuras;
-- **una columna de controles junto a la estructura**, agrupados por lo que hacen (reproducción, enlaces, superficie, fuerzas, vista, gráfica): primera, última, reproducir/pausa, anterior, siguiente, velocidad, repetición, tolerancia de enlace, enlaces metal–metal, una orientación fija para todas las estructuras y un tema blanco; cada control es también una opción de la terminal (`mole --help`);
-- **orbitales y densidades de archivos cube**: isosuperficies con el lóbulo positivo en rojo y el negativo en azul, un valor de iso ajustable y transparencia opcional.
+- **una columna de controles junto a la estructura**, agrupados por lo que hacen (reproducción, enlaces, superficie, fuerzas, vista, gráfica): primera, última, reproducir/pausa, anterior, siguiente, velocidad, repetición, tolerancia de enlace, enlaces metal–metal, una orientación fija para todas las estructuras y un tema blanco; las opciones de visualización también son opciones de la terminal (`mole --help`);
+- **orbitales y densidades de archivos cube**: isosuperficies con el lóbulo positivo en rojo y el negativo en azul, un valor de iso ajustable y transparencia opcional;
+- **valores por átomo y flechas de fuerza** de los XYZ extendidos (ver *Formatos y energías*).
 
-MOLE está pensado para **correr en una máquina remota (un clúster HPC o una estación de trabajo) y verse por `ssh -Y`**. Dibuja con el protocolo X11 básico, así que por la red solo viajan órdenes de dibujo (unos KB por fotograma) y la ventana va fluida incluso con una conexión doméstica. Solo lee resultados; nunca ejecuta cálculos.
+MOLE está pensado para **correr en una máquina remota (un clúster HPC o una estación de trabajo) y verse por `ssh -Y`**. Dibuja con el protocolo X11 básico, así que por la red solo viajan órdenes de dibujo, nunca imágenes. Tráfico medido por fotograma: unos 5 KB con una molécula de agua, 10 KB con un hexámero de agua y 74 KB con 100 átomos (25 KB con `--smooth`); las superficies de los cubos que probamos añadieron de 28 a 120 KB. (MOLE 0.3.1, Linux con Xwayland, ventana de 1200 × 820; bytes enviados al servidor X contados con `strace` durante `MOLE_BENCH=300 mole archivo`.) Solo lee resultados; nunca ejecuta cálculos.
 
 ## Instalación
 MOLE es un único ejecutable sin dependencias. No hacen falta permisos de administrador.
 
-**Con pip** (Linux x86_64/aarch64, macOS, Windows):
+**Con pip** (Linux x86_64/aarch64, macOS; en Windows, usa WSL como se explica abajo):
 ```bash
 pip install mole-viewer        # o: pip install --user mole-viewer · pipx install mole-viewer · uv tool install mole-viewer
 mole                           # el paquete se llama mole-viewer; el comando es mole
@@ -99,6 +100,7 @@ mole --help
 - **Teclado:** ← → anterior/siguiente · espacio reproducir/pausa · Inicio/Fin primera/última · q o Esc salir.
 - **Ratón (vista 3D):** arrastrar gira · botón derecho mueve · rueda acerca · doble clic restablece.
 - **Ratón (gráfica):** al pasar sobre un punto se ven n, E y la etiqueta · clic o arrastrar recorre las estructuras · arrastrar su borde superior la hace más alta o más baja. Arrastrar el borde izquierdo de la columna de controles la ensancha.
+- **Estructuras grandes:** los enlaces se dibujan hasta 10 000 átomos; las estructuras mayores muestran solo los átomos.
 - **Eje de energía:** relativo (E − Emin) por defecto; la casilla *E - Emin* lo cambia a energías absolutas.
 - **Fix orientation:** gira todas las estructuras a la orientación de la que está en pantalla (átomo por átomo en trayectorias y confórmeros, por ejes principales en isómeros), para recorrer un conjunto sin que la vista salte.
 
@@ -123,7 +125,7 @@ Probado con archivos XYZ y con salidas de Gaussian 16 Rev. B.01 y de ORCA 6.1.
 
 Los XYZ extendidos (`Properties=species:S:1:pos:R:3:…` en la línea de comentario) conservan sus columnas numéricas extra por átomo: al pasar el puntero sobre un átomo se ven sus valores (cargas, funciones de Fukui, …), y una columna `forces:R:3` se dibuja como una flecha por átomo, escalada para que la fuerza mayor de cada estructura tenga siempre el mismo largo; la casilla *Arrows* las oculta. El `|F|` que aparece al pasar el puntero da la magnitud real.
 
-Los archivos cube se probaron con orbitales, funciones de Fukui y densidades de Multiwfn y ORCA. Para que la ventana siga fluida por la red, una superficie se dibuja con 6000 caras como máximo (por encima se usa una malla más gruesa); la transparencia necesita XRender, así que activa el dibujo suavizado.
+Los archivos cube se probaron con orbitales, funciones de Fukui y densidades de Multiwfn y ORCA. Para mantener bajo el tráfico, cuando una superficie tendría más de 6000 caras se usa una malla más gruesa, que la deja cerca de ese número; la transparencia necesita XRender, así que activa el dibujo suavizado.
 
 ## Cómo citarlo
 Si usas MOLE en un trabajo publicado, por favor cítalo con su DOI, [10.5281/zenodo.23963301](https://doi.org/10.5281/zenodo.23963301) (Zenodo; siempre apunta a la última versión, y cada versión tiene además su propio DOI ahí). Los datos están en [`CITATION.cff`](CITATION.cff), y el botón *Cite this repository* de GitHub los convierte a APA o BibTeX.
@@ -137,4 +139,14 @@ Dudas sobre el software: <contact@padalher.com>. Contacto académico: los correo
 MOLE fue diseñado, dirigido y validado por Pablo D. Alvarez-Hernandez. Se usaron asistentes de programación basados en IA para escribir y reestructurar partes del código, las pruebas automáticas y la documentación; cada cambio fue revisado y validado por el autor. Las energías y geometrías que muestra MOLE siempre se leen de los archivos de salida de los cálculos de química cuántica; nunca las genera un modelo de lenguaje.
 
 ## Licencia
-[MIT](LICENSE).
+[MIT](LICENSE). Los colores de los elementos que MOLE no fija por sí mismo vienen del [Blue Obelisk Data Repository](https://github.com/BlueObelisk/bodr) (licencia MIT).
+
+## Desarrollo
+```bash
+cargo test                                   # pruebas
+cargo clippy --all-targets && cargo deny check
+MOLE_SAMPLES=/ruta/a/archivos cargo test     # también lee tus propios archivos
+MOLE_BENCH=200 mole archivo.xyz              # reproduce 200 fotogramas, imprime la tasa y sale
+```
+
+`mole-core` lee los archivos y no tiene dependencias gráficas; `mole` es la ventana (X11 con [x11rb](https://github.com/psychon/x11rb)). Las versiones las compila y publica GitHub Actions al subir una etiqueta `v*`.
