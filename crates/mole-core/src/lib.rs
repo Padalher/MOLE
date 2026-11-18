@@ -165,13 +165,63 @@ pub fn read_file(path: &Path) -> Result<String, Error> {
     Ok(String::from_utf8_lossy(&bytes).into_owned())
 }
 
+fn add_step(
+    steps: &mut Vec<Structure>,
+    atoms: Vec<Atom>,
+    energy: Option<f64>,
+    source: EnergySource,
+    path: &Path,
+    start: usize,
+) -> Result<(), Error> {
+    if atoms.is_empty() {
+        return Err(Error::parse(path, start + 1, "geometry without atoms"));
+    }
+    if !steps
+        .last()
+        .is_some_and(|p| p.atoms == atoms && p.energy == energy)
+    {
+        let program = if source == EnergySource::OrcaFinal {
+            "ORCA"
+        } else {
+            "Gaussian"
+        };
+        steps.push(Structure {
+            atoms,
+            energy,
+            energy_source: energy.map(|_| source),
+            comment: format!("{program}: {}", path.display()),
+            label: String::new(),
+            path: path.to_path_buf(),
+            line: start + 1,
+            columns: Vec::new(),
+            grid: None,
+        });
+    }
+    Ok(())
+}
+
+fn name_steps(steps: &mut [Structure], path: &Path) {
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or_default();
+    let many = steps.len() > 1;
+    for (k, s) in steps.iter_mut().enumerate() {
+        s.label = if many {
+            format!("{stem} {}", k + 1)
+        } else {
+            stem.to_string()
+        };
+    }
+}
+
 fn is_output_ext(path: &Path) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| e.eq_ignore_ascii_case("out") || e.eq_ignore_ascii_case("log"))
 }
 
-pub fn parse_output(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error> {
+pub fn parse_output(text: &str, path: &Path) -> Result<(Vec<Structure>, Vec<String>), Error> {
     if orca::is_orca(text) {
         orca::parse(text, path)
     } else {
@@ -194,7 +244,7 @@ fn load_one(path: &Path, out: &mut Loaded) -> Result<(), Error> {
         let text = read_file(path)?;
         let (s, warnings) = parse_output(&text, path)?;
         out.warnings.extend(warnings);
-        out.structures.push(s);
+        out.structures.extend(s);
     } else {
         return Err(Error {
             kind: ErrorKind::Unsupported,
@@ -266,7 +316,9 @@ fn fill_energies_from_outputs(
         };
         let (energy, source) = *read[k].get_or_insert_with(|| {
             match read_file(&outputs[k]).and_then(|t| parse_output(&t, &outputs[k])) {
-                Ok((s, _)) => (s.energy, s.energy_source),
+                Ok((s, _)) => s
+                    .last()
+                    .map_or((None, None), |s| (s.energy, s.energy_source)),
                 Err(e) => {
                     warnings.push(format!("could not read the associated energy: {e}"));
                     (None, None)

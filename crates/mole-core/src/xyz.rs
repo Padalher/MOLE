@@ -46,7 +46,7 @@ pub fn energy_from_comment(comment: &str) -> (Option<f64>, Option<String>) {
         };
         if energy.is_none() && (key == "E" || key.eq_ignore_ascii_case("energy")) {
             energy = num(value);
-        } else if label.is_none() && key == "label" && !value.is_empty() {
+        } else if label.is_none() && matches!(key, "label" | "name" | "i") && !value.is_empty() {
             label = Some(value.to_string());
         }
     }
@@ -193,6 +193,12 @@ mod tests {
         assert_eq!(
             energy_from_comment("Coordinates from ORCA-job h2o E -74.962421895501"),
             (Some(-74.962421895501), None)
+        );
+        assert_eq!(
+            energy_from_comment(
+                "Lattice=\"16.68 0.0 0.0\" i=B2_0.700 energy=-1297.79 pbc=\"T T T\""
+            ),
+            (Some(-1297.79), Some("B2_0.700".into()))
         );
         assert_eq!(energy_from_comment("agua optimizada"), (None, None));
         assert_eq!(energy_from_comment("E x"), (None, None));

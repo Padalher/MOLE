@@ -50,37 +50,49 @@ fn parse_geometry(
     ))
 }
 
-pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error> {
+pub fn parse(text: &str, path: &Path) -> Result<(Vec<Structure>, Vec<String>), Error> {
     let lines: Vec<&str> = text.lines().collect();
     let mut warnings = Vec::new();
-    let (mut last_geom, mut energy) = (None, None);
+    let mut steps = Vec::new();
+    let (mut pending, mut last_geom) = (None, None);
     for (i, line) in lines.iter().enumerate() {
         if line.contains(GEOMETRY) {
-            last_geom = Some(i);
-            energy = None;
+            (pending, last_geom) = (Some(i), Some(i));
         } else if let Some(rest) = line.trim_start().strip_prefix(ENERGY) {
-            energy = rest.trim().parse::<f64>().ok().filter(|v| v.is_finite());
-            if energy.is_none() {
+            let energy = rest.trim().parse::<f64>().ok().filter(|v| v.is_finite());
+            if energy.is_none() && warnings.len() < 20 {
                 warnings.push(format!(
                     "{}:{}: '{ENERGY}' line without a readable energy",
                     path.display(),
                     i + 1
                 ));
             }
+            if let Some(start) = pending.take()
+                && let Err(e) = parse_geometry(&lines, start, path, &mut warnings).and_then(|a| {
+                    crate::add_step(&mut steps, a, energy, EnergySource::OrcaFinal, path, start)
+                })
+                && warnings.len() < 20
+            {
+                warnings.push(format!("geometry skipped: {e}"));
+            }
         }
     }
-    let start =
-        last_geom.ok_or_else(|| Error::parse(path, lines.len().max(1), "no geometry found"))?;
-    let atoms = parse_geometry(&lines, start, path, &mut warnings)?;
-    if atoms.is_empty() {
-        return Err(Error::parse(path, start + 1, "geometry without atoms"));
+    if steps.is_empty() {
+        let start =
+            last_geom.ok_or_else(|| Error::parse(path, lines.len().max(1), "no geometry found"))?;
+        warnings.clear();
+        let atoms = parse_geometry(&lines, start, path, &mut warnings)?;
+        crate::add_step(
+            &mut steps,
+            atoms,
+            None,
+            EnergySource::OrcaFinal,
+            path,
+            start,
+        )?;
+        warnings.push(format!("{}: no '{ENERGY}'", path.display()));
     }
-    if energy.is_none() {
-        warnings.push(format!(
-            "{}: the last geometry has no '{ENERGY}'",
-            path.display()
-        ));
-    }
+    crate::name_steps(&mut steps, path);
     if !lines
         .iter()
         .rev()
@@ -88,27 +100,11 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
         .any(|l| l.contains("ORCA TERMINATED NORMALLY"))
     {
         warnings.push(format!(
-            "{}: calculation did not terminate normally; showing the last geometry",
+            "{}: calculation did not terminate normally",
             path.display()
         ));
     }
-    let label = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default()
-        .to_string();
-    let structure = Structure {
-        atoms,
-        energy,
-        energy_source: energy.map(|_| EnergySource::OrcaFinal),
-        comment: format!("ORCA: {}", path.display()),
-        label,
-        path: path.to_path_buf(),
-        line: start + 1,
-        columns: Vec::new(),
-        grid: None,
-    };
-    Ok((structure, warnings))
+    Ok((steps, warnings))
 }
 
 #[cfg(test)]
@@ -146,20 +142,25 @@ FINAL SINGLE POINT ENERGY       -74.965901191476
                              ****ORCA TERMINATED NORMALLY****
 ";
 
-    fn p(t: &str) -> Result<(Structure, Vec<String>), Error> {
+    fn p(t: &str) -> Result<(Vec<Structure>, Vec<String>), Error> {
         parse(t, Path::new("dir/h2o.out"))
     }
 
     #[test]
-    fn last_geometry_and_its_energy() {
+    fn every_geometry_with_its_energy() {
         assert!(is_orca(SAMPLE));
         let (s, w) = p(SAMPLE).unwrap();
-        assert_eq!(s.energy, Some(-74.965901191476));
-        assert_eq!(s.energy_source, Some(EnergySource::OrcaFinal));
-        assert_eq!(s.atoms.len(), 3);
-        assert_eq!(s.atoms[1].pos, [0.0, 0.758105, -0.471927]);
-        assert_eq!(s.label, "h2o");
-        assert_eq!(s.line, 19);
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].energy, Some(-74.962421895501));
+        assert_eq!(s[1].energy, Some(-74.965901191476));
+        assert_eq!(s[1].energy_source, Some(EnergySource::OrcaFinal));
+        assert_eq!(s[1].atoms.len(), 3);
+        assert_eq!(s[1].atoms[1].pos, [0.0, 0.758105, -0.471927]);
+        assert_eq!(
+            (s[0].label.as_str(), s[1].label.as_str()),
+            ("h2o 1", "h2o 2")
+        );
+        assert_eq!(s[1].line, 19);
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("'DA'"));
     }
@@ -168,9 +169,15 @@ FINAL SINGLE POINT ENERGY       -74.965901191476
     fn incomplete_outputs() {
         let cut = SAMPLE.rsplit_once("FINAL SINGLE").unwrap().0;
         let (s, w) = p(cut).unwrap();
-        assert_eq!(s.energy, None);
-        assert!(w.iter().any(|w| w.contains("has no")));
+        assert_eq!((s.len(), s[0].energy), (1, Some(-74.962421895501)));
         assert!(w.iter().any(|w| w.contains("did not terminate normally")));
+        let first = SAMPLE.split("FINAL SINGLE").next().unwrap();
+        let (s, w) = p(first).unwrap();
+        assert_eq!(
+            (s.len(), s[0].energy, s[0].label.as_str()),
+            (1, None, "h2o")
+        );
+        assert!(w.iter().any(|w| w.contains("no 'FINAL")));
         let trunc: String = SAMPLE.lines().take(9).collect::<Vec<_>>().join("\n");
         assert!(p(&trunc).unwrap_err().msg.contains("unterminated"));
         assert!(
@@ -180,7 +187,9 @@ FINAL SINGLE POINT ENERGY       -74.965901191476
                 .contains("geometry")
         );
         let bad = SAMPLE.replace("0.758105   -0.471927", "0.75x   -0.471927");
-        assert!(p(&bad).unwrap_err().msg.contains("row"));
+        let (s, w) = p(&bad).unwrap();
+        assert_eq!(s.len(), 1, "la geometría corrupta se omite");
+        assert!(w.iter().any(|w| w.contains("row")), "{w:?}");
     }
 
     #[test]

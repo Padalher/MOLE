@@ -84,7 +84,7 @@ Tested on Linux, on macOS (XQuartz) and on Windows through WSL (see Installation
 ## Usage
 ```bash
 mole ensemble.xyz                 # XYZ file with one or more structures
-mole calc_*.out                   # Gaussian or ORCA outputs: one structure per file
+mole calc_*.out                   # Gaussian or ORCA outputs: every optimization step
 mole opt_trj.xyz                  # ORCA optimization trajectory (E vs step)
 mole a.xyz b.xyz                  # several files, in the given order
 mole orbital.cube                 # cube file: atoms and an isosurface
@@ -115,15 +115,15 @@ mole examples/water_opt_trj.xyz
 | File | Structures | Energy |
 |---|---|---|
 | `.xyz` | all frames | from each comment line: a leading number (`-3219847.92  label`), `E=-76.32`, `energy=-76.32` or `… E -76.32` (ORCA `*_trj.xyz`) |
-| Gaussian output (`.out`, `.log`) | last geometry | last `SCF Done` |
-| ORCA output (`.out`, `.log`) | last geometry | its `FINAL SINGLE POINT ENERGY` |
+| Gaussian output (`.out`, `.log`) | every geometry with an `SCF Done` (all the steps of an optimization or scan; a repeated calculation at the same geometry, e.g. a frequency job, is not repeated) | its `SCF Done` |
+| ORCA output (`.out`, `.log`) | every geometry with a `FINAL SINGLE POINT ENERGY` (all the optimization cycles and the final evaluation) | its `FINAL SINGLE POINT ENERGY` |
 | Gaussian cube (`.cube`, `.cub`) | atoms and a 3D grid (first data set) | none |
 
 The program is recognized by the file contents, not by the extension. Energies are shown as read, without unit conversion. By default the plot shows relative energies, E − Emin, in the same units, and writes Emin above it; the *E - Emin* checkbox switches it to absolute energies. The header and the tooltip always show each energy as read. Structures without an energy can be viewed, but they are not plotted.
 
 Tested with XYZ files, Gaussian 16 Rev. B.01 and ORCA 6.1 outputs.
 
-Extended XYZ files (`Properties=species:S:1:pos:R:3:…` in the comment line) keep their extra numeric columns per atom: hovering over an atom shows its values (charges, Fukui functions, …), and a `forces:R:3` column is drawn as one arrow per atom, scaled so that the largest force of each structure has the same length; the *Arrows* checkbox hides them. The `|F|` shown when hovering gives the actual magnitude.
+Extended XYZ files (`Properties=species:S:1:pos:R:3:…` in the comment line) keep their extra numeric columns per atom: hovering over an atom shows its values (charges, Fukui functions, …), and a `forces:R:3` column is drawn as one arrow per atom, starting at the atom surface. The arrow length grows with the logarithm of the force, with one scale for the whole file: the largest force sticks out 1 Å, and forces well below 0.01 eV/Å give no visible arrow, so forces over several orders of magnitude can be compared. Forces are taken in eV/Å (the extended XYZ convention), or in Hartree/bohr when the comment line has `forces_unit=Ha/bohr`. The *Arrows* checkbox hides them; the `|F|` shown when hovering is the value in the file. The structure name is read from `label=`, `name=` or `i=`.
 
 Cube files were tested with orbitals, Fukui functions and densities from Multiwfn and ORCA. To keep the traffic low, a coarser grid is used when a surface would have more than 6000 faces, which keeps it near that number; transparency needs XRender, so it turns on smooth drawing.
 

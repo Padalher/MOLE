@@ -4,7 +4,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 ## [0.3.1] — 2026-11-16
 ### Added
 - Gaussian cube files (`.cube`, `.cub`): atoms and isosurfaces, with the positive lobe in red and the negative one in blue, an isovalue control and an optional *Transparent* mode. Several cube files can be browsed like structures. Multi-orbital files show the first data set, with a warning.
-- Extended XYZ: the numeric per-atom columns named in `Properties=` are read; hovering over an atom shows their values, and a `forces:R:3` column is drawn as one arrow per atom (scaled per structure; *Arrows* checkbox).
+- Extended XYZ: the numeric per-atom columns named in `Properties=` are read; hovering over an atom shows their values, and a `forces:R:3` column is drawn as one arrow per atom, from the atom surface, with a logarithmic length and one scale for the whole file (eV/Å, or Hartree/bohr with `forces_unit=Ha/bohr`; *Arrows* checkbox). The structure name is also read from `name=` and `i=`.
+- Gaussian and ORCA outputs: every geometry with its energy is read (`SCF Done` in Gaussian, `FINAL SINGLE POINT ENERGY` in ORCA), so an optimization or a scan is browsed step by step with its energy plot; a repeated calculation at the same geometry (e.g. the frequency job of an opt+freq run) is not added again, and a damaged intermediate geometry is skipped with a warning.
 - White theme: *Light theme* checkbox and `--light`.
 - Command-line options for every control: `--frame N`, `--absolute`, `--fix-orientation`, `--tol T`, `--no-mm`, `--iso V`, `--transparent` and `--no-forces` (see `mole --help`).
 - Contact addresses of the authors in the README, `CITATION.cff` and the package metadata; questions about the software: contact@padalher.com.
@@ -15,6 +16,8 @@ Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](ht
 - With fewer than two energies, the E vs n plot opens at its minimum height; a single energy no longer gives an axis of 10^-9 steps.
 - README, `CITATION.cff` and package description: MOLE is described by the files it opens (XYZ, Gaussian and ORCA outputs, cube files).
 - README: tested on Linux, macOS (XQuartz) and Windows through WSL, locally and over ssh.
+- The release build stops at once on an internal error (`panic = "abort"`) instead of unwinding, which keeps the executable under 1 MB (963 248 bytes for the static Linux binary).
+- The PyPI package accepts Python 3.6 and later (it only contains the executable); tested with `pip` on a cluster with Python 3.6.
 
 ### Fixed
 - A crash when the pointer rested on an atom while the structure on screen changed (playback, a button or a window resize) and the new structure had fewer atoms.

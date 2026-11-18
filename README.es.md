@@ -84,7 +84,7 @@ Probado en Linux, en macOS (XQuartz) y en Windows a través de WSL (ver Instalac
 ## Uso
 ```bash
 mole conjunto.xyz                 # XYZ con una o varias estructuras
-mole calc_*.out                   # salidas de Gaussian u ORCA: una estructura por archivo
+mole calc_*.out                   # salidas de Gaussian u ORCA: cada paso de la optimización
 mole opt_trj.xyz                  # trayectoria de optimización de ORCA (E vs paso)
 mole a.xyz b.xyz                  # varios archivos, en el orden dado
 mole orbital.cube                 # archivo cube: átomos e isosuperficie
@@ -115,15 +115,15 @@ mole examples/water_opt_trj.xyz
 | Archivo | Estructuras | Energía |
 |---|---|---|
 | `.xyz` | todas | de la línea de comentario de cada una: un número al inicio (`-3219847.92  etiqueta`), `E=-76.32`, `energy=-76.32` o `… E -76.32` (trayectorias `*_trj.xyz` de ORCA) |
-| salida de Gaussian (`.out`, `.log`) | última geometría | última `SCF Done` |
-| salida de ORCA (`.out`, `.log`) | última geometría | su `FINAL SINGLE POINT ENERGY` |
+| salida de Gaussian (`.out`, `.log`) | cada geometría con un `SCF Done` (todos los pasos de una optimización o un barrido; un cálculo repetido en la misma geometría, como uno de frecuencias, no se repite) | su `SCF Done` |
+| salida de ORCA (`.out`, `.log`) | cada geometría con un `FINAL SINGLE POINT ENERGY` (todos los ciclos de la optimización y la evaluación final) | su `FINAL SINGLE POINT ENERGY` |
 | cube de Gaussian (`.cube`, `.cub`) | átomos y una malla 3D (el primer conjunto de datos) | ninguna |
 
 El programa que generó el archivo se reconoce por su contenido, no por la extensión. Las energías se muestran tal como se leen, sin convertir unidades. Por defecto la gráfica muestra energías relativas, E − Emin, en las mismas unidades, y escribe Emin encima; la casilla *E - Emin* la cambia a energías absolutas. La cabecera y el recuadro del puntero siempre muestran cada energía tal como se leyó. Las estructuras sin energía se pueden ver, pero no aparecen en la gráfica.
 
 Probado con archivos XYZ y con salidas de Gaussian 16 Rev. B.01 y de ORCA 6.1.
 
-Los XYZ extendidos (`Properties=species:S:1:pos:R:3:…` en la línea de comentario) conservan sus columnas numéricas extra por átomo: al pasar el puntero sobre un átomo se ven sus valores (cargas, funciones de Fukui, …), y una columna `forces:R:3` se dibuja como una flecha por átomo, escalada para que la fuerza mayor de cada estructura tenga siempre el mismo largo; la casilla *Arrows* las oculta. El `|F|` que aparece al pasar el puntero da la magnitud real.
+Los XYZ extendidos (`Properties=species:S:1:pos:R:3:…` en la línea de comentario) conservan sus columnas numéricas extra por átomo: al pasar el puntero sobre un átomo se ven sus valores (cargas, funciones de Fukui, …), y una columna `forces:R:3` se dibuja como una flecha por átomo que sale de la superficie del átomo. El largo crece con el logaritmo de la fuerza, con una sola escala para todo el archivo: la fuerza mayor sobresale 1 Å y las fuerzas muy por debajo de 0.01 eV/Å no dan una flecha visible, así que se pueden comparar fuerzas de varios órdenes de magnitud. Las fuerzas se toman en eV/Å (la convención del XYZ extendido), o en Hartree/bohr cuando la línea de comentario trae `forces_unit=Ha/bohr`. La casilla *Arrows* las oculta; el `|F|` que aparece al pasar el puntero es el valor del archivo. El nombre de cada estructura se lee de `label=`, `name=` o `i=`.
 
 Los archivos cube se probaron con orbitales, funciones de Fukui y densidades de Multiwfn y ORCA. Para mantener bajo el tráfico, cuando una superficie tendría más de 6000 caras se usa una malla más gruesa, que la deja cerca de ese número; la transparencia necesita XRender, así que activa el dibujo suavizado.
 

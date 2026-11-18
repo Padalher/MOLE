@@ -12,7 +12,8 @@ Files:
                 (includes ORCA *_trj.xyz trajectories); in extended XYZ files
                 (Properties=...) the per-atom values are shown when hovering
                 over an atom and a forces:R:3 column is drawn as arrows
-  .out, .log    Gaussian or ORCA output: final geometry and its energy
+  .out, .log    Gaussian or ORCA output: every geometry with its energy (all the steps
+                of an optimization)
   .cube, .cub   Gaussian cube: atoms and an isosurface (red +, blue -)
 
 Options:

@@ -778,7 +778,7 @@ impl Window<'_> {
                     rgb,
                 )?,
                 (Shape3d::Arrow { from, to, head }, _) => {
-                    c.line(d, from, to, 2, force)?;
+                    c.line(d, from, to, 3, force)?;
                     c.polygon(
                         d,
                         &head.map(|(x, y)| (x.round() as i32, y.round() as i32)),

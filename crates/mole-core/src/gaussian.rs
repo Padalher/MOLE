@@ -43,7 +43,19 @@ fn parse_orientation(
     ))
 }
 
-pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error> {
+fn push_step(
+    lines: &[&str],
+    start: usize,
+    energy: Option<f64>,
+    path: &Path,
+    steps: &mut Vec<Structure>,
+    warnings: &mut Vec<String>,
+) -> Result<(), Error> {
+    let atoms = parse_orientation(lines, start, path, warnings)?;
+    crate::add_step(steps, atoms, energy, EnergySource::GaussianScf, path, start)
+}
+
+pub fn parse(text: &str, path: &Path) -> Result<(Vec<Structure>, Vec<String>), Error> {
     let lines: Vec<&str> = text.lines().collect();
     if !lines
         .iter()
@@ -58,7 +70,8 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
         });
     }
     let mut warnings = Vec::new();
-    let (mut last_std, mut last_inp, mut energy) = (None, None, None);
+    let mut steps = Vec::new();
+    let (mut last_std, mut last_inp, mut last_used) = (None, None, None);
     let mut normal_end = false;
     for (i, line) in lines.iter().enumerate() {
         if line.contains("Standard orientation:") {
@@ -66,32 +79,41 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
         } else if line.contains("Input orientation:") {
             last_inp = Some(i);
         } else if line.contains("SCF Done:") {
-            energy = line
+            let energy = line
                 .split_once('=')
                 .and_then(|(_, rest)| rest.split_whitespace().next())
                 .and_then(|t| t.parse::<f64>().ok())
                 .filter(|v| v.is_finite());
-            if energy.is_none() {
+            if energy.is_none() && warnings.len() < 20 {
                 warnings.push(format!(
                     "{}:{}: 'SCF Done' line without a readable energy",
                     path.display(),
                     i + 1
                 ));
             }
+            if let Some(start) = last_std.or(last_inp) {
+                if let Err(e) = push_step(&lines, start, energy, path, &mut steps, &mut warnings)
+                    && warnings.len() < 20
+                {
+                    warnings.push(format!("geometry skipped: {e}"));
+                }
+                last_used = Some(start);
+            }
+            (last_std, last_inp) = (None, None);
         } else if line.contains("Normal termination of Gaussian") {
             normal_end = true;
         }
     }
-    let start = last_std
-        .or(last_inp)
-        .ok_or_else(|| Error::parse(path, lines.len().max(1), "no geometry found"))?;
-    let atoms = parse_orientation(&lines, start, path, &mut warnings)?;
-    if atoms.is_empty() {
-        return Err(Error::parse(path, start + 1, "geometry without atoms"));
-    }
-    if energy.is_none() {
+    if steps.is_empty() {
+        let start = last_std
+            .or(last_inp)
+            .or(last_used)
+            .ok_or_else(|| Error::parse(path, lines.len().max(1), "no geometry found"))?;
+        warnings.clear();
+        push_step(&lines, start, None, path, &mut steps, &mut warnings)?;
         warnings.push(format!("{}: no 'SCF Done' energy", path.display()));
     }
+    crate::name_steps(&mut steps, path);
     if !normal_end
         || lines
             .iter()
@@ -100,27 +122,11 @@ pub fn parse(text: &str, path: &Path) -> Result<(Structure, Vec<String>), Error>
             .any(|l| l.contains("Error termination"))
     {
         warnings.push(format!(
-            "{}: calculation did not terminate normally; showing the last geometry",
+            "{}: calculation did not terminate normally",
             path.display()
         ));
     }
-    let label = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or_default()
-        .to_string();
-    let structure = Structure {
-        atoms,
-        energy,
-        energy_source: energy.map(|_| EnergySource::GaussianScf),
-        comment: format!("Gaussian: {}", path.display()),
-        label,
-        path: path.to_path_buf(),
-        line: start + 1,
-        columns: Vec::new(),
-        grid: None,
-    };
-    Ok((structure, warnings))
+    Ok((steps, warnings))
 }
 
 #[cfg(test)]
@@ -163,28 +169,45 @@ mod tests {
  Normal termination of Gaussian 16 at Sun Feb 12 00:02:13 2023.
 ";
 
-    fn p(t: &str) -> Result<(Structure, Vec<String>), Error> {
+    fn p(t: &str) -> Result<(Vec<Structure>, Vec<String>), Error> {
         parse(t, Path::new("dir/calc_stage1.out"))
     }
 
     #[test]
-    fn last_standard_orientation_and_energy() {
+    fn every_optimization_step() {
         let (s, w) = p(SAMPLE).unwrap();
-        assert_eq!(s.energy, Some(-76.42));
-        assert_eq!(s.energy_source, Some(EnergySource::GaussianScf));
-        assert_eq!(s.atoms.len(), 3);
-        assert_eq!(s.atoms[0].pos, [0.0, 0.0, 0.11]);
-        assert_eq!(s.label, "calc_stage1");
-        assert_eq!(s.line, 23);
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].energy, Some(-76.4));
+        assert_eq!(s[0].atoms[0].pos, [0.0, 0.0, 0.1]);
+        assert_eq!(s[1].energy, Some(-76.42));
+        assert_eq!(s[1].energy_source, Some(EnergySource::GaussianScf));
+        assert_eq!(s[1].atoms.len(), 3);
+        assert_eq!(s[1].atoms[0].pos, [0.0, 0.0, 0.11]);
+        assert_eq!(
+            (s[0].label.as_str(), s[1].label.as_str()),
+            ("calc_stage1 1", "calc_stage1 2")
+        );
+        assert_eq!(s[1].line, 23);
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("Z = 0"));
+        let tail = SAMPLE.split(" Normal termination").next().unwrap();
+        let last = &tail[tail.rfind("Standard orientation:").unwrap()..];
+        let (s, _) = p(&format!("{tail}{last} Normal termination\n")).unwrap();
+        assert_eq!(
+            s.len(),
+            2,
+            "un cálculo repetido en la misma geometría no es un paso nuevo"
+        );
     }
 
     #[test]
     fn incomplete_or_foreign_outputs() {
         let cut = SAMPLE.split(" SCF Done").next().unwrap();
         let (s, w) = p(cut).unwrap();
-        assert_eq!(s.energy, None);
+        assert_eq!(
+            (s.len(), s[0].energy, s[0].label.as_str()),
+            (1, None, "calc_stage1")
+        );
         assert!(w.iter().any(|w| w.contains("no 'SCF Done'")));
         assert!(w.iter().any(|w| w.contains("did not terminate normally")));
         let trunc: String = SAMPLE.lines().take(9).collect::<Vec<_>>().join("\n");
@@ -199,16 +222,17 @@ mod tests {
             p("* O   R   C   A *\n").unwrap_err().kind,
             ErrorKind::Unsupported
         );
-        let bad = SAMPLE.replace("0.760000   -0.500000", "0.76abc   -0.500000");
-        assert!(
-            p(&bad).is_ok(),
-            "la fila corrupta está en una geometría anterior"
-        );
-        let bad = SAMPLE.replace(
-            "-0.770000   -0.590000\n      4",
-            "-0.77xx   -0.590000\n      4",
-        );
-        assert!(p(&bad).unwrap_err().msg.contains("row"));
+        for bad in [
+            SAMPLE.replace("0.760000   -0.500000", "0.76abc   -0.500000"),
+            SAMPLE.replace(
+                "-0.770000   -0.590000\n      4",
+                "-0.77xx   -0.590000\n      4",
+            ),
+        ] {
+            let (s, w) = p(&bad).unwrap();
+            assert_eq!(s.len(), 1, "la geometría corrupta se omite");
+            assert!(w.iter().any(|w| w.contains("row")), "{w:?}");
+        }
     }
 
     #[test]

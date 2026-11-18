@@ -12,7 +12,7 @@ authors = [
     { name = "Pablo D. Alvarez-Hernandez", email = "pablo.alvarez@padalher.com" },
     { name = "Filiberto Ortiz Chi", email = "filiberto.ortiz@cinvestav.mx" },
 ]
-requires-python = ">=3.8"
+requires-python = ">=3.6"
 keywords = ["chemistry", "computational-chemistry", "molecular-visualization", "xyz", "orca", "gaussian", "x11"]
 classifiers = [
     "Development Status :: 4 - Beta",

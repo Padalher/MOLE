@@ -834,12 +834,26 @@ const MAX_ISO: f64 = 10.0;
 const ISO_STEP: f64 = 1.25;
 const MAX_QUADS: usize = 6000;
 const LOBE_RGB: [[f64; 3]; 2] = [[0.86, 0.16, 0.16], [0.16, 0.32, 0.9]];
-const FORCE_LEN: f64 = 1.5;
+const FORCE_LEN: f64 = 1.0;
+const FORCE_REF: f64 = 0.01;
+const HARTREE_PER_BOHR: f64 = 51.422_086_190_832_32;
 
-fn forces(s: &Structure) -> Option<&[f64]> {
-    s.column("forces")
-        .filter(|c| c.width == 3)
-        .map(|c| c.values.as_slice())
+fn forces(s: &Structure) -> Option<(&[f64], f64)> {
+    let unit = s.comment.split_whitespace().any(|t| {
+        [
+            "forces_unit=Ha/bohr",
+            "forces_unit=hartree/bohr",
+            "forces_unit=Eh/bohr",
+        ]
+        .iter()
+        .any(|u| t.eq_ignore_ascii_case(u))
+    });
+    s.column("forces").filter(|c| c.width == 3).map(|c| {
+        (
+            c.values.as_slice(),
+            if unit { HARTREE_PER_BOHR } else { 1.0 },
+        )
+    })
 }
 
 fn max_force(f: &[f64]) -> f64 {
@@ -882,6 +896,7 @@ pub struct App {
     pub transparent: bool,
     pub light: bool,
     pub forces: bool,
+    force_max: f64,
     pub fixed_orientation: Option<Vec<Mat3>>,
     pub smooth: bool,
     pub layout: Layout,
@@ -921,6 +936,12 @@ impl App {
             ..layout.panes
         };
         let layout = Layout::with_panes(layout.w, layout.h, layout.char_w, layout.line_h, panes);
+        let force_max = loaded
+            .structures
+            .iter()
+            .filter_map(forces)
+            .map(|(f, unit)| max_force(f) * unit)
+            .fold(0.0, f64::max);
         let extent = loaded
             .structures
             .iter()
@@ -961,6 +982,7 @@ impl App {
             surface: (None, Vec::new()),
             iso,
             forces: true,
+            force_max,
             transparent: false,
             light: false,
             last_click: None,
@@ -1111,27 +1133,39 @@ impl App {
             }
         }
         let (m, c, scale, (ox, oy)) = self.view();
-        if let Some(f) = forces(self.structure()).filter(|_| self.forces) {
-            let max = max_force(f);
-            for (q, v) in p.iter().zip(f.chunks(3)) {
-                let r = apply(&m, [v[0], v[1], v[2]]);
-                let k = FORCE_LEN * scale / max;
-                let (dx, dy) = (r[0] * k, -r[1] * k);
+        if let Some((f, unit)) = forces(self.structure()).filter(|_| self.forces) {
+            let span = (1.0 + self.force_max / FORCE_REF).ln();
+            for ((q, v), a) in p.iter().zip(f.chunks(3)).zip(atoms) {
+                let size = norm(v);
+                if size.is_nan() || size * unit <= 1e-6 {
+                    continue;
+                }
+                let r = apply(&m, [v[0] / size, v[1] / size, v[2] / size]);
+                let radius = ball_radius(a.z);
+                let out = FORCE_LEN * (1.0 + size * unit / FORCE_REF).ln() / span;
+                let at = |d: f64| {
+                    [
+                        q[0] + r[0] * d * scale,
+                        q[1] - r[1] * d * scale,
+                        q[2] + r[2] * d,
+                    ]
+                };
+                let (from, tip) = (at(radius), at(radius + out));
+                let (dx, dy) = (tip[0] - from[0], tip[1] - from[1]);
                 let len = dx.hypot(dy);
-                if !len.is_finite() || len < 4.0 {
+                if !len.is_finite() || len < 3.0 {
                     continue;
                 }
                 let (ux, uy) = (dx / len, dy / len);
-                let h = (0.35 * len).min(12.0);
-                let tip = (q[0] + dx, q[1] + dy);
-                let base = (tip.0 - ux * h, tip.1 - uy * h);
-                let side = |s: f64| (base.0 - uy * s * h * 0.45, base.1 + ux * s * h * 0.45);
+                let h = (0.4 * len).min(15.0);
+                let base = (tip[0] - ux * h, tip[1] - uy * h);
+                let side = |s: f64| (base.0 - uy * s * h * 0.55, base.1 + ux * s * h * 0.55);
                 let shape = Shape3d::Arrow {
-                    from: (q[0], q[1]),
+                    from: (from[0], from[1]),
                     to: base,
-                    head: [tip, side(1.0), side(-1.0)],
+                    head: [(tip[0], tip[1]), side(1.0), side(-1.0)],
                 };
-                items.push((f64::INFINITY, shape));
+                items.push(((from[2] + tip[2]) / 2.0, shape));
             }
         }
         for (face, positive) in &self.surface.1 {
@@ -1864,11 +1898,13 @@ mod tests {
             mole_core::Column {
                 name: "forces".into(),
                 width: 3,
-                values: vec![1e-5, 0.0, 0.0, 0.0, 2e-5, 0.0],
+                values: vec![10.0, 0.0, 0.0, 0.0, 1.0, 0.0],
             },
         ];
+        let mut weak = st.clone();
+        weak.columns[1].values.iter_mut().for_each(|v| *v *= 1e-3);
         let loaded = Loaded {
-            structures: vec![st],
+            structures: vec![st, weak],
             ..Default::default()
         };
         let mut a = App::new(loaded, Layout::new(1200, 800, 9, 15));
@@ -1885,7 +1921,17 @@ mod tests {
         };
         let len = arrows(&mut a);
         assert_eq!(len.len(), 2, "una flecha por átomo");
-        assert!((len[1] - 2.0 * len[0]).abs() < 1e-6, "{len:?}");
+        assert!(
+            len[0] > len[1] && len[1] > 0.5 * len[0],
+            "escala logarítmica: {len:?}"
+        );
+        a.player.next();
+        let small = arrows(&mut a);
+        assert!(
+            small.len() == 1 && small[0] < 0.2 * len[0],
+            "una escala para todo el archivo: {small:?} frente a {len:?}"
+        );
+        a.player.go(0);
         assert!(
             a.layout
                 .items
@@ -1902,15 +1948,13 @@ mod tests {
                 .any(|i| i.0 == BarItem::Button(Button::Forces))
         );
         let st = a.structure();
-        assert_eq!(
-            column_lines(st, 0),
-            ["q=-0.5  forces=(1.00e-5, 0, 0) |F|=1.00e-5"]
-        );
-        assert_eq!(
-            column_lines(st, 1)[0],
-            "q=NaN  forces=(0, 2.00e-5, 0) |F|=2.00e-5"
-        );
+        assert_eq!(column_lines(st, 0), ["q=-0.5  forces=(10, 0, 0) |F|=10"]);
+        assert_eq!(column_lines(st, 1)[0], "q=NaN  forces=(0, 1, 0) |F|=1");
         assert!(column_lines(st, 5).is_empty());
+        let mut ha = st.clone();
+        ha.comment = "E=-1 forces_unit=Ha/bohr Properties=species:S:1:pos:R:3:forces:R:3".into();
+        assert_eq!(forces(&ha).unwrap().1, HARTREE_PER_BOHR);
+        assert_eq!(forces(st).unwrap().1, 1.0);
     }
 
     #[test]
