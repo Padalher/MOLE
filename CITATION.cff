@@ -3,7 +3,7 @@ message: "If you use MOLE in published work, please cite it as below."
 type: software
 title: "MOLE: a lightweight molecular viewer with an interactive E vs n plot"
 version: 0.3.1
-date-released: 2026-11-16
+date-released: 2026-11-18
 doi: 10.5281/zenodo.23963301
 license: MIT
 repository-code: "https://github.com/Padalher/MOLE"
@@ -18,11 +18,11 @@ keywords:
   - extended XYZ
   - X11
 authors:
-  - given-names: Pablo D.
-    family-names: Alvarez-Hernandez
-    affiliation: "Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, Mexico"
+  - given-names: Pablo Daniel
+    family-names: Álvarez Hernández
+    affiliation: "DACB-UJAT"
     email: pablo.alvarez@padalher.com
   - given-names: Filiberto
     family-names: Ortiz Chi
-    affiliation: "Cinvestav Unidad Mérida, TheoChem Mérida, Mexico"
+    affiliation: "SECIHTI-Cinvestav Unidad Mérida"
     email: filiberto.ortiz@cinvestav.mx

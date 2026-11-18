@@ -19,7 +19,7 @@
 <p align="center"><i><a href="README.md">English version</a></i></p>
 
 <p align="center">
-  <img src="assets/screenshot.png" alt="Ventana de MOLE: vista 3D de una molécula de agua, gráfica E vs n de su optimización de geometría y la columna de controles" width="820">
+  <img src="assets/screenshot.png" alt="Ventana de MOLE, mitad en tema oscuro y mitad en tema claro: un hexámero de agua, la gráfica E vs n de 15 estructuras y la columna de controles" width="820">
 </p>
 
 MOLE abre archivos XYZ con una o varias estructuras, salidas de Gaussian y de ORCA, y archivos cube. Se lanza desde la terminal y abre una ventana con:
@@ -131,12 +131,12 @@ Los archivos cube se probaron con orbitales, funciones de Fukui y densidades de 
 Si usas MOLE en un trabajo publicado, por favor cítalo con su DOI, [10.5281/zenodo.23963301](https://doi.org/10.5281/zenodo.23963301) (Zenodo; siempre apunta a la última versión, y cada versión tiene además su propio DOI ahí). Los datos están en [`CITATION.cff`](CITATION.cff), y el botón *Cite this repository* de GitHub los convierte a APA o BibTeX.
 
 ## Autores
-- Pablo D. Alvarez-Hernandez: Universidad Juárez Autónoma de Tabasco, DACB – CICTAT, México. <pablo.alvarez@padalher.com>
-- Filiberto Ortiz Chi: Cinvestav Unidad Mérida, TheoChem Mérida, México. <filiberto.ortiz@cinvestav.mx>
+- Pablo Daniel Álvarez Hernández: DACB-UJAT. <pablo.alvarez@padalher.com>
+- Filiberto Ortiz Chi: SECIHTI-Cinvestav Unidad Mérida. <filiberto.ortiz@cinvestav.mx>
 
 Dudas sobre el software: <contact@padalher.com>. Contacto académico: los correos de los autores, arriba.
 
-MOLE fue diseñado, dirigido y validado por Pablo D. Alvarez-Hernandez. Se usaron asistentes de programación basados en IA para escribir y reestructurar partes del código, las pruebas automáticas y la documentación; cada cambio fue revisado y validado por el autor. Las energías y geometrías que muestra MOLE siempre se leen de los archivos de salida de los cálculos de química cuántica; nunca las genera un modelo de lenguaje.
+MOLE fue diseñado, dirigido y validado por Pablo Daniel Álvarez Hernández. Se usaron asistentes de programación basados en IA para escribir y reestructurar partes del código, las pruebas automáticas y la documentación; cada cambio fue revisado y validado por el autor. Las energías y geometrías que muestra MOLE siempre se leen de los archivos de salida de los cálculos de química cuántica; nunca las genera un modelo de lenguaje.
 
 ## Licencia
 [MIT](LICENSE). Los colores de los elementos que MOLE no fija por sí mismo vienen del [Blue Obelisk Data Repository](https://github.com/BlueObelisk/bodr) (licencia MIT).

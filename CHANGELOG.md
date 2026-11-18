@@ -1,14 +1,15 @@
 # Changelog
 Format: [Keep a Changelog](https://keepachangelog.com/). Versioning: [SemVer](https://semver.org/).
 
-## [0.3.1] — 2026-11-16
+## [0.3.1] — 2026-11-18
 ### Added
 - Gaussian cube files (`.cube`, `.cub`): atoms and isosurfaces, with the positive lobe in red and the negative one in blue, an isovalue control and an optional *Transparent* mode. Several cube files can be browsed like structures. Multi-orbital files show the first data set, with a warning.
 - Extended XYZ: the numeric per-atom columns named in `Properties=` are read; hovering over an atom shows their values, and a `forces:R:3` column is drawn as one arrow per atom, from the atom surface, with a logarithmic length and one scale for the whole file (eV/Å, or Hartree/bohr with `forces_unit=Ha/bohr`; *Arrows* checkbox). The structure name is also read from `name=` and `i=`.
 - Gaussian and ORCA outputs: every geometry with its energy is read (`SCF Done` in Gaussian, `FINAL SINGLE POINT ENERGY` in ORCA), so an optimization or a scan is browsed step by step with its energy plot; a repeated calculation at the same geometry (e.g. the frequency job of an opt+freq run) is not added again, and a damaged intermediate geometry is skipped with a warning.
 - White theme: *Light theme* checkbox and `--light`.
 - Command-line options for every control: `--frame N`, `--absolute`, `--fix-orientation`, `--tol T`, `--no-mm`, `--iso V`, `--transparent` and `--no-forces` (see `mole --help`).
-- Contact addresses of the authors in the README, `CITATION.cff` and the package metadata; questions about the software: contact@padalher.com.
+- Authors' names, affiliations (DACB-UJAT; SECIHTI-Cinvestav Unidad Mérida) and contact addresses in the README, `CITATION.cff` and the package metadata; questions about the software: contact@padalher.com.
+- README: new screenshot, half in the dark theme and half in the light theme.
 
 ### Changed
 - The controls column is grouped under titles: Playback, Bonds, Surface (cube files), Forces (files with forces), View and Plot. It can be widened by dragging its left edge.

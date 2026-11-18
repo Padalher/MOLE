@@ -6,7 +6,7 @@ members = ["crates/*"]
 version = "0.3.1"
 edition = "2024"
 publish = false
-authors = ["Pablo D. Alvarez-Hernandez <pablo.alvarez@padalher.com>", "Filiberto Ortiz Chi <filiberto.ortiz@cinvestav.mx>"]
+authors = ["Pablo Daniel Álvarez Hernández <pablo.alvarez@padalher.com>", "Filiberto Ortiz Chi <filiberto.ortiz@cinvestav.mx>"]
 license = "MIT"
 repository = "https://github.com/Padalher/MOLE"
 
